@@ -6,10 +6,9 @@
 //
 // 2. When frontend is hosted on Firebase Hosting:
 //    Paste your Render backend URL here:
-//    Example: window.MISTRI_API_BASE = "https://mistribaiya-api.onrender.com";
 // ============================================================================
 
-window.MISTRI_API_BASE = window.MISTRI_API_BASE || "";
+window.MISTRI_API_BASE = "https://mistribaiya-api.onrender.com";
 
 (function () {
   const stored = localStorage.getItem("mistri_api_base");
