@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MistriBaiya Admin</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f4f7f4;color:#1d2b1d}
+header{background:#1b5e20;color:#fff;padding:12px 16px;font-weight:700}
+main{padding:12px;max-width:1100px;margin:auto}
+.cards{display:flex;flex-wrap:wrap;gap:10px}.c{background:#fff;border-radius:12px;padding:12px 16px;min-width:130px;box-shadow:0 1px 4px #0001}
+.c b{font-size:24px;display:block}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;margin:10px 0;font-size:13px}
+th,td{padding:7px 9px;border-bottom:1px solid #eef;text-align:left}th{background:#e8f0e8}
+h3{margin:16px 0 4px}button{padding:5px 9px;border:0;border-radius:8px;background:#2e7d32;color:#fff;cursor:pointer}
+.free{color:#2e7d32;font-weight:700}.sos{background:#ffebee}
+</style></head><body>
+<header>🏗️ MistriBaiya Admin <span id="who" style="float:right;font-weight:400"></span></header>
+<main id="m">Loading…</main>
+<script src="config.js"></script>
+<script>
+const tok = localStorage.getItem("ks_token");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const getApiBase = () => (window.MISTRI_API_BASE ? window.MISTRI_API_BASE.replace(/\/+$/, "") : "");
+const api = async (p, m = "GET") => {
+  const base = getApiBase();
+  const r = await fetch((base ? base : "") + "/api" + p, { method: m, headers: { Authorization: "Bearer " + tok } });
+  if (!r.ok) throw new Error((await r.json()).detail || r.status);
+  return r.json();
+};
+const when = t => t ? new Date(t * 1000).toLocaleString() : "-";
+async function load() {
+  const m = document.getElementById("m");
+  if (!tok) { m.innerHTML = "Please login in the main app first (with an ADMIN_PHONES number), then reopen this page."; return; }
+  try {
+    const [s, w, b, sf] = await Promise.all([api("/admin/stats"), api("/admin/workers"), api("/admin/bookings"), api("/admin/safety")]);
+    const card = (k, v) => `<div class="c"><b>${esc(v)}</b>${esc(k)}</div>`;
+    m.innerHTML = `<div class="cards">${card("Workers", s.workers)}${card("Customers", s.customers)}${card("Free now", s.workers_free_now)}${card("Open jobs", s.open_jobs)}${card("Calls", s.calls)}
+      ${Object.entries(s.bookings).map(([k, v]) => card("Bookings " + k, v)).join("")}</div>
+      <h3>🆘 SOS events (${sf.sos.length})</h3><table><tr><th>When</th><th>User id</th><th>Booking</th><th>Location</th></tr>${sf.sos.map(x => `<tr class="sos"><td>${when(x.created_at)}</td><td>${x.user_id}</td><td>${x.booking_id ?? "-"}</td><td>${x.lat ?? ""}, ${x.lng ?? ""}</td></tr>`).join("")}</table>
+      <h3>Complaints (${sf.reports.length})</h3><table><tr><th>When</th><th>Reporter</th><th>Reported</th><th>Reason</th></tr>${sf.reports.map(x => `<tr><td>${when(x.created_at)}</td><td>${x.reporter_id}</td><td>${x.reported_id}</td><td>${esc(x.reason)}</td></tr>`).join("")}</table>
+      <h3>Workers</h3><table><tr><th>Name</th><th>Phone</th><th>Skills</th><th>Village</th><th>₹/day</th><th>Rating</th><th>Free now</th><th>Verified</th></tr>
+      ${w.workers.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.phone)}</td><td>${esc(x.skills)}</td><td>${esc(x.village)}</td><td>${x.daily_rate}</td><td>${(x.rating_avg || 0).toFixed(1)} (${x.rating_count})</td>
+      <td class="${x.free_now ? "free" : ""}">${x.free_now ? "FREE" : "-"}</td><td>${x.verified ? "✔" : `<button onclick="verify(${x.id})">Verify</button>`}</td></tr>`).join("")}</table>
+      <h3>Latest bookings</h3><table><tr><th>ID</th><th>Skill</th><th>Date</th><th>Days</th><th>Status</th><th>Worker</th><th>Customer</th><th>Rating</th></tr>
+      ${b.bookings.map(x => `<tr><td>${x.id}</td><td>${esc(x.skill)}</td><td>${esc(x.start_date)}</td><td>${x.days}</td><td>${esc(x.status)}</td><td>${x.worker_id}</td><td>${x.customer_id}</td><td>${x.rating ?? ""}</td></tr>`).join("")}</table>`;
+  } catch (e) { m.textContent = "Error: " + e.message; }
+}
+async function verify(id) { await api("/admin/workers/" + id + "/verify", "POST"); load(); }
+load(); setInterval(load, 15000);
+</script></body></html>

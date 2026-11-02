@@ -1,0 +1,22 @@
+# Render.com Blueprint configuration for MistriBhaiya
+# 
+# OPTION 1: Free Tier (Zero cost, no credit card required)
+# Note: Render Free web services spin down on idle, and don't support persistent disks.
+#
+# OPTION 2: Starter Plan ($7/mo with persistent disk)
+# Uncomment the 'disk' line and change plan to 'starter' if you want SQLite data to persist across restarts.
+
+services:
+  - type: web
+    name: mistribaiya-api
+    runtime: docker
+    plan: free # Change to starter if using persistent disk
+    healthCheckPath: /healthz
+    # disk: { name: data, mountPath: /data, sizeGB: 1 } # Uncomment for Render Starter ($7/mo)
+    envVars:
+      - { key: SECRET_KEY, generateValue: true }
+      - { key: DEV_MODE, value: "1" } # "1" during setup/testing to see OTP, change to "0" for production
+      - { key: DB_PATH, value: /tmp/mistribaiya.db } # Use /data/mistribaiya.db if persistent disk is attached
+      - { key: SMS_PROVIDER, value: console }
+      - { key: CALL_PROVIDER, value: direct }
+      - { key: CORS_ORIGINS, value: "*" }

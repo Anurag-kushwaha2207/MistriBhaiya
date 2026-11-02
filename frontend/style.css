@@ -1,0 +1,41 @@
+:root{--g:#1b5e20;--g2:#2e7d32;--o:#ef6c00;--bg:#f4f7f4;--card:#fff;--tx:#1d2b1d;--mut:#667;--red:#c62828}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Devanagari",sans-serif;background:var(--bg);color:var(--tx);padding-bottom:70px}
+header{position:sticky;top:0;background:var(--g);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;z-index:5}
+.brand{font-weight:700;font-size:18px}
+main{max-width:640px;margin:0 auto;padding:12px}
+h2{margin:6px 0 10px;font-size:19px}
+.card{background:var(--card);border-radius:14px;padding:12px;margin:10px 0;box-shadow:0 1px 4px #0001}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #cfd8cf;border-radius:10px;font-size:16px;background:#fff}
+input[type=range]{padding:0}
+button{border:0;border-radius:12px;padding:12px 14px;font-size:16px;font-weight:600;background:var(--g2);color:#fff;cursor:pointer}
+button.sec{background:#e8f0e8;color:var(--g)}
+button.warn{background:var(--red)}
+button.big{width:100%;padding:16px;font-size:18px;margin:6px 0}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#fff}
+.free{background:#2e7d32}.busy{background:#c62828}.offline{background:#78909c}
+.sub{color:var(--mut);font-size:13px}
+.skills span{display:inline-block;background:#e8f0e8;color:var(--g);border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;display:flex;border-top:1px solid #dde;z-index:5}
+nav button{flex:1;background:none;color:var(--mut);border-radius:0;padding:10px 4px;font-size:12px}
+nav button.on{color:var(--g);border-top:3px solid var(--g)}
+nav button span{display:block;font-size:20px}
+#toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:10px;display:none;z-index:9;max-width:90%}
+.chk label{display:inline-flex;align-items:center;gap:6px;margin:4px 10px 4px 0;color:var(--tx);font-size:15px}
+.chk input{width:auto}
+.modal{position:fixed;inset:0;background:#0007;display:flex;align-items:flex-end;z-index:8}
+.modal .sheet{background:#fff;width:100%;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px;max-width:640px;margin:0 auto}
+.live{color:var(--g2);font-size:12px}
+.bubble{padding:8px 10px;border-radius:12px;margin:5px 0;max-width:85%;font-size:14px;word-wrap:break-word}
+.bubble.me{background:#dcedc8;margin-left:auto}.bubble.ot{background:#eceff1}
+.neg{max-height:30vh;overflow:auto;margin:8px 0}.chatlist{max-height:45vh;overflow:auto;margin:8px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chips button{background:#e8f0e8;color:var(--g);padding:8px 12px;font-size:14px;border-radius:999px}
+.botbox{height:calc(100vh - 290px);min-height:240px;overflow:auto;padding:4px}
+.stat{display:inline-block;min-width:92px;margin:4px;padding:10px;border-radius:12px;background:#fff;box-shadow:0 1px 4px #0001;text-align:center}
+.stat b{display:block;font-size:22px}
+table.t{width:100%;border-collapse:collapse;font-size:13px}table.t td,table.t th{padding:6px;border-bottom:1px solid #eee;text-align:left}
+.mic{background:var(--o)!important}.mic.on{background:var(--red)!important}
