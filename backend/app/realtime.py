@@ -37,6 +37,10 @@ class Hub:
     def is_online(self, uid: int) -> bool:
         return any(c["uid"] == uid for c in self.conns)
 
+    async def broadcast(self, payload: dict):
+        for c in list(self.conns):
+            await self._send(c, payload)
+
     async def worker_status(self, worker: dict):
         if worker.get("lat") is None:
             return

@@ -20,7 +20,8 @@ const T = {
     startWork: "▶ काम शुरू (OTP)", enterOtp: "ग्राहक से 4 अंक का OTP पूछें", otpLabel: "काम शुरू OTP", otpHint: "मिस्त्री आने पर ये OTP उसे बताएँ", st_started: "शुरू",
     inapp: "🎧 ऐप से कॉल (फ्री)", phonecall: "📱 फोन से कॉल", calling: "कॉल लग रही है…", incoming: "आपको कॉल आ रही है", answer: "उठाएँ", hangup: "काटें", callended: "कॉल खत्म",
     connected: "कॉल चालू है", nomic: "माइक की अनुमति चाहिए", sos: "🆘 SOS", sosSent: "SOS भेज दिया गया। ज़रूरत हो तो 112 पर कॉल करें।", report: "शिकायत", reportWhy: "शिकायत का कारण लिखें",
-    earnings: "मेरी कमाई", jobsDone: "पूरे काम", totalEarned: "कुल कमाई", thisMonth: "इस महीने", upcoming: "आने वाले काम", close: "बंद करें"
+    earnings: "मेरी कमाई", jobsDone: "पूरे काम", totalEarned: "कुल कमाई", thisMonth: "इस महीने", upcoming: "आने वाले काम", close: "बंद करें",
+    changePhoto: "फोटो बदलें", editProfile: "जानकारी बदलें", viewProfile: "प्रोफाइल देखें", saveChanges: "सेव करें", removePhoto: "फोटो हटाएं", userInfo: "व्यक्तिगत जानकारी", workInfo: "काम की जानकारी", photoUpdated: "फोटो अपडेट हो गई", confirmLogout: "क्या आप सच में लॉगआउट करना चाहते हैं?", cancelEdit: "रद्द करें"
   },
   en: {
     login: "Login", phone: "Mobile number", name: "Your name", iam: "I am a", worker: "Mistri / Labour", customer: "Home owner / Customer",
@@ -42,7 +43,8 @@ const T = {
     startWork: "▶ Start work (OTP)", enterOtp: "Ask the customer for the 4-digit OTP", otpLabel: "Start-work OTP", otpHint: "Tell this OTP to the mistri when he arrives", st_started: "Started",
     inapp: "🎧 In-app call (free)", phonecall: "📱 Phone call", calling: "Calling…", incoming: "Incoming call", answer: "Answer", hangup: "End", callended: "Call ended",
     connected: "Call in progress", nomic: "Microphone permission needed", sos: "🆘 SOS", sosSent: "SOS sent. Call 112 if you need help.", report: "Report", reportWhy: "Reason for the complaint",
-    earnings: "My earnings", jobsDone: "Jobs done", totalEarned: "Total earned", thisMonth: "This month", upcoming: "Upcoming", close: "Close"
+    earnings: "My earnings", jobsDone: "Jobs done", totalEarned: "Total earned", thisMonth: "This month", upcoming: "Upcoming", close: "Close",
+    changePhoto: "Change Photo", editProfile: "Edit Details", viewProfile: "View Profile", saveChanges: "Save Changes", removePhoto: "Remove Photo", userInfo: "Personal Info", workInfo: "Work Details", photoUpdated: "Photo updated successfully", confirmLogout: "Are you sure you want to log out?", cancelEdit: "Cancel"
   }
 };
 
@@ -122,17 +124,387 @@ function subscribeWS() {
     S.ws.send(JSON.stringify({ type: "subscribe", lat: S.loc.lat, lng: S.loc.lng, radius_km: S.f.radius }));
 }
 
-/* ---------------- shell ---------------- */
-function logout() { localStorage.removeItem("ks_token"); S.token = null; S.user = null; if (S.ws) try { S.ws.close(); } catch (e) {} showLogin(); }
-function topbar() {
-  $("#topright").innerHTML = `<button class="sec" id="langb" style="padding:6px 10px">${S.lang === "hi" ? "EN" : "हिं"}</button> ` + (S.user ? `<button class="sec" id="outb" style="padding:6px 10px">${t("logout")}</button>` : "");
-  $("#langb").onclick = () => { S.lang = S.lang === "hi" ? "en" : "hi"; localStorage.setItem("ks_lang", S.lang); document.documentElement.lang = S.lang; route(); };
-  if ($("#outb")) $("#outb").onclick = logout;
+/* ---------------- image compression ---------------- */
+function compressAndResizeImage(file, maxDim = 320, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
+
+/* ---------------- shell & profile ---------------- */
+function logout() {
+  localStorage.removeItem("ks_token");
+  S.token = null;
+  S.user = null;
+  S.profile = null;
+  if (S.ws) try { S.ws.close(); } catch (e) {}
+  const modal = $("#profmodal");
+  if (modal) modal.remove();
+  showLogin();
+}
+
+function topbar() {
+  let userBtn = "";
+  if (S.user) {
+    const av = S.user.avatar
+      ? `<span class="avatar-sm"><img src="${esc(S.user.avatar)}" alt=""></span>`
+      : `<span class="avatar-sm">👤</span>`;
+    const dName = esc(S.user.name || t("profile"));
+    userBtn = `<button class="sec profile-btn" id="profb" title="${t("viewProfile")}">${av}<span>${dName}</span></button>`;
+  }
+
+  $("#topright").innerHTML = `<button class="sec" id="langb" style="padding:6px 10px">${S.lang === "hi" ? "EN" : "हिं"}</button> ` + userBtn;
+
+  $("#langb").onclick = () => {
+    S.lang = S.lang === "hi" ? "en" : "hi";
+    localStorage.setItem("ks_lang", S.lang);
+    document.documentElement.lang = S.lang;
+    route();
+  };
+
+  if ($("#profb")) {
+    $("#profb").onclick = () => openFullProfile();
+  }
+}
+
+async function openFullProfile() {
+  let modal = $("#profmodal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.className = "modal";
+    modal.id = "profmodal";
+    document.body.appendChild(modal);
+  }
+  const close = () => { if (modal) modal.remove(); };
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+
+  try {
+    const me = await api("/me");
+    S.user = { ...S.user, ...me.user };
+    S.profile = me.profile || {};
+    if (typeof fbSyncUser === "function") fbSyncUser(S.user);
+    if (typeof fbSyncWorkerProfile === "function" && S.user.role === "worker" && S.profile) fbSyncWorkerProfile(S.user.id, S.profile);
+    if (typeof fbSyncContractorProfile === "function" && S.user.role === "contractor" && S.profile) fbSyncContractorProfile(S.user.id, S.profile);
+  } catch (e) {}
+
+  modal.innerHTML = `<div class="sheet" style="position:relative; max-height:92vh; overflow-y:auto; padding:18px;"><div id="profmodal_inner"></div></div>`;
+  const inner = modal.querySelector("#profmodal_inner");
+  renderFullProfileContent(inner, false, close);
+}
+
+function renderFullProfileContent(container, isEditing = false, onClose = null) {
+  const u = S.user || {};
+  const p = S.profile || {};
+  const role = u.role || "worker";
+  const roleLabel = role === "worker" ? `👷 ${t("worker")}` : (role === "customer" ? `🏠 ${t("customer")}` : `🏗️ ${t("contractor")}`);
+  const roleColor = role === "worker" ? "#2e7d32" : (role === "customer" ? "#1565c0" : "#e65100");
+  const haveSkills = new Set(Array.isArray(p.skills) ? p.skills : (p.skills || "").split(",").filter(Boolean));
+
+  const avatarDisplay = u.avatar
+    ? `<img src="${esc(u.avatar)}" alt="Avatar">`
+    : `<span>👤</span>`;
+
+  let bodyHtml = "";
+
+  if (isEditing) {
+    // ---------------- Edit Form ----------------
+    let roleFields = "";
+    if (role === "worker") {
+      roleFields = `
+        <label>${t("skills")}</label>
+        <div class="chk">${(S.meta?.skills || []).map(s => `<label><input type="checkbox" value="${s.key}" ${haveSkills.has(s.key) ? "checked" : ""}>${esc(s[S.lang])}</label>`).join("")}</div>
+        <label>${t("rate")}</label><input id="rt" type="number" value="${p.daily_rate || ""}">
+        <label>${t("exp")}</label><input id="ex" type="number" value="${p.experience_years || ""}">
+        <label>${t("village")}</label><input id="vl" value="${esc(p.village || "")}">
+        <label>${t("radius")}: <b id="rv">${p.radius_km || 6}</b> ${t("km")}</label><input id="rd" type="range" min="1" max="50" step="1" value="${p.radius_km || 6}">
+      `;
+    } else if (role === "contractor") {
+      roleFields = `
+        <label>${t("company") || "कंपनी / फर्म"}</label><input id="pc" value="${esc(p.company || "")}">
+        <label>${t("skills")}</label>
+        <div class="chk">${(S.meta?.skills || []).map(s => `<label><input type="checkbox" value="${s.key}" ${haveSkills.has(s.key) ? "checked" : ""}>${esc(s[S.lang])}</label>`).join("")}</div>
+        <label>${t("village")}</label><input id="pv" value="${esc(p.village || "")}">
+        <label>${t("radius")}: <b id="rv">${p.radius_km || 25}</b> ${t("km")}</label><input id="rd" type="range" min="1" max="100" step="1" value="${p.radius_km || 25}">
+        <label>${t("minBudget") || "न्यूनतम बजट (₹)"}</label><input id="pm" type="number" value="${p.min_budget || ""}">
+        <label>${t("exp")}</label><input id="pe" type="number" value="${p.experience_years || ""}">
+        <label>About</label><textarea id="pa" rows="3">${esc(p.about || "")}</textarea>
+      `;
+    }
+
+    bodyHtml = `
+      <div style="margin-top:12px;">
+        <h3 style="margin:4px 0 12px;">✏️ ${t("editProfile")}</h3>
+        <label>${t("name")}</label><input id="nm" value="${esc(u.name || "")}">
+        ${roleFields}
+        <button class="big sec" id="loc" style="margin-top:12px;">📍 ${t("setloc")}</button>
+        <div class="sub" id="locs" style="margin-bottom:8px;">${p.lat != null || S.loc ? t("locok") : ""}</div>
+        <div class="row" style="margin-top:12px;">
+          <button class="big" id="sv">💾 ${t("saveChanges")}</button>
+          <button class="big sec" id="cancel_edit">${t("cancelEdit")}</button>
+        </div>
+      </div>
+    `;
+  } else {
+    // ---------------- View Mode ----------------
+    let roleDetailsHtml = "";
+    if (role === "worker") {
+      const skillsHtml = (Array.isArray(p.skills) ? p.skills : (p.skills || "").split(",").filter(Boolean))
+        .map(s => `<span>${esc(skillName(s))}</span>`).join("") || "—";
+      roleDetailsHtml = `
+        <div class="card" style="margin:10px 0; background:#f9fbf9;">
+          <h4 style="margin:2px 0 10px; font-size:15px;">🧰 ${t("workInfo")}</h4>
+          <div class="info-grid">
+            <div class="info-cell"><div class="sub">${t("status")}</div><div class="val"><span class="pill ${p.status || 'offline'}">${t("s_" + (p.status || 'offline'))}</span></div></div>
+            <div class="info-cell"><div class="sub">${t("rate")}</div><div class="val">₹${p.daily_rate || 0} / दिन</div></div>
+            <div class="info-cell"><div class="sub">${t("exp")}</div><div class="val">${p.experience_years || 0} साल</div></div>
+            <div class="info-cell"><div class="sub">${t("radius")}</div><div class="val">${p.radius_km || 6} km</div></div>
+            <div class="info-cell" style="grid-column:span 2"><div class="sub">${t("village")}</div><div class="val">${esc(p.village || "—")}</div></div>
+            <div class="info-cell" style="grid-column:span 2"><div class="sub">${t("skills")}</div><div class="skills" style="margin-top:4px;">${skillsHtml}</div></div>
+            <div class="info-cell"><div class="sub">${t("rating")}</div><div class="val">⭐ ${p.rating_avg || 0} (${p.rating_count || 0})</div></div>
+            <div class="info-cell"><div class="sub">GPS Location</div><div class="val">${p.lat != null ? "✅ सेट है" : "⚠️ सेट नहीं"}</div></div>
+          </div>
+        </div>
+      `;
+    } else if (role === "contractor") {
+      const skillsHtml = (Array.isArray(p.skills) ? p.skills : (p.skills || "").split(",").filter(Boolean))
+        .map(s => `<span>${esc(skillName(s))}</span>`).join("") || "—";
+      roleDetailsHtml = `
+        <div class="card" style="margin:10px 0; background:#f9fbf9;">
+          <h4 style="margin:2px 0 10px; font-size:15px;">🏗️ ${t("workInfo")}</h4>
+          <div class="info-grid">
+            <div class="info-cell" style="grid-column:span 2"><div class="sub">Company / Firm</div><div class="val">${esc(p.company || "—")}</div></div>
+            <div class="info-cell"><div class="sub">${t("village")}</div><div class="val">${esc(p.village || "—")}</div></div>
+            <div class="info-cell"><div class="sub">${t("radius")}</div><div class="val">${p.radius_km || 25} km</div></div>
+            <div class="info-cell"><div class="sub">Min Budget</div><div class="val">₹${p.min_budget || 0}</div></div>
+            <div class="info-cell"><div class="sub">${t("exp")}</div><div class="val">${p.experience_years || 0} साल</div></div>
+            <div class="info-cell" style="grid-column:span 2"><div class="sub">${t("skills")}</div><div class="skills" style="margin-top:4px;">${skillsHtml}</div></div>
+            ${p.about ? `<div class="info-cell" style="grid-column:span 2"><div class="sub">About</div><div class="val" style="font-size:13px; font-weight:normal;">${esc(p.about)}</div></div>` : ""}
+          </div>
+        </div>
+      `;
+    } else if (role === "customer") {
+      roleDetailsHtml = `
+        <div class="card" style="margin:10px 0; background:#f9fbf9;">
+          <h4 style="margin:2px 0 10px; font-size:15px;">📍 लोकेशन</h4>
+          <div class="info-cell">
+            <div class="sub">GPS Status</div>
+            <div class="val">${S.loc ? "✅ " + S.loc.lat.toFixed(4) + ", " + S.loc.lng.toFixed(4) : "⚠️ सेट नहीं है"}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    bodyHtml = `
+      <div style="text-align:center; margin:4px 0 12px;">
+        <h3 style="margin:2px 0 4px; font-size:18px;">${esc(u.name || "—")}</h3>
+        <span class="pill" style="background:${roleColor}">${roleLabel}</span>
+        <div class="sub" style="margin-top:6px;">ID: #${u.id} &nbsp;|&nbsp; 📞 ${esc(u.phone || u.phone_last4 || "—")}</div>
+      </div>
+
+      <div class="card" style="margin:10px 0; background:#f9fbf9;">
+        <h4 style="margin:2px 0 10px; font-size:15px;">📋 ${t("userInfo")}</h4>
+        <div class="info-grid">
+          <div class="info-cell"><div class="sub">${t("name")}</div><div class="val">${esc(u.name || "—")}</div></div>
+          <div class="info-cell"><div class="sub">${t("phone")}</div><div class="val">${esc(u.phone || u.phone_last4 || "—")}</div></div>
+          <div class="info-cell"><div class="sub">${t("iam")}</div><div class="val">${roleLabel}</div></div>
+          <div class="info-cell"><div class="sub">Language</div><div class="val">${u.lang === "en" ? "English" : "हिन्दी"}</div></div>
+        </div>
+      </div>
+
+      ${roleDetailsHtml}
+
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:14px;">
+        <button class="big" id="prof_edit_btn">✏️ ${t("editProfile")}</button>
+        <button class="big sec" id="prof_setloc_btn">📍 ${t("setloc")}</button>
+        <button class="big warn" id="prof_logout_btn" style="background:#c62828;">🚪 ${t("logout")}</button>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    ${onClose ? `<button class="close-btn" id="prof_close_btn" title="${t("close")}">✕</button>` : ""}
+    <h2 style="margin:2px 0 10px; display:flex; align-items:center; gap:8px;"><span>👤</span> ${t("profile")}</h2>
+
+    <div class="avatar-wrap">
+      <div class="avatar-lg" id="prof_avatar_preview">${avatarDisplay}</div>
+      <div style="margin-top:8px; display:flex; gap:8px; justify-content:center;">
+        <button type="button" class="sec" id="prof_change_photo_btn" style="padding:6px 14px; font-size:13px;">📷 ${t("changePhoto")}</button>
+        ${u.avatar ? `<button type="button" class="sec" id="prof_rm_photo_btn" style="padding:6px 12px; font-size:13px; color:#c62828;" title="${t("removePhoto")}">🗑️</button>` : ""}
+      </div>
+      <input type="file" id="prof_file_input" accept="image/*" style="display:none">
+    </div>
+
+    ${bodyHtml}
+  `;
+
+  // ---------------- Event Listeners ----------------
+  if (onClose && container.querySelector("#prof_close_btn")) {
+    container.querySelector("#prof_close_btn").onclick = onClose;
+  }
+
+  // Photo change
+  const photoBtn = container.querySelector("#prof_change_photo_btn");
+  const fileInp = container.querySelector("#prof_file_input");
+  if (photoBtn && fileInp) {
+    photoBtn.onclick = () => fileInp.click();
+    fileInp.onchange = guard(async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      toast("⏳ फोटो प्रोसेस हो रही है…");
+      const base64Data = await compressAndResizeImage(file, 300, 0.82);
+      await api("/me", "PUT", { avatar: base64Data });
+      S.user.avatar = base64Data;
+      if (typeof fbSyncUser === "function") fbSyncUser(S.user);
+      topbar();
+      toast("✅ " + t("photoUpdated"));
+      renderFullProfileContent(container, isEditing, onClose);
+    });
+  }
+
+  // Remove photo
+  const rmPhotoBtn = container.querySelector("#prof_rm_photo_btn");
+  if (rmPhotoBtn) {
+    rmPhotoBtn.onclick = guard(async () => {
+      if (!confirm(t("removePhoto") + "?")) return;
+      await api("/me", "PUT", { avatar: "" });
+      S.user.avatar = "";
+      if (typeof fbSyncUser === "function") fbSyncUser(S.user);
+      topbar();
+      toast(t("removePhoto") + " ok");
+      renderFullProfileContent(container, isEditing, onClose);
+    });
+  }
+
+  if (isEditing) {
+    // Slider value indicator
+    const rd = container.querySelector("#rd");
+    const rv = container.querySelector("#rv");
+    if (rd && rv) rd.oninput = () => rv.textContent = rd.value;
+
+    // Location button
+    const locBtn = container.querySelector("#loc");
+    const locs = container.querySelector("#locs");
+    if (locBtn) {
+      locBtn.onclick = guard(async () => {
+        await getLoc(true);
+        if (locs) locs.textContent = t("locok");
+        toast(t("locok"));
+      });
+    }
+
+    // Cancel edit
+    const cancelBtn = container.querySelector("#cancel_edit");
+    if (cancelBtn) {
+      cancelBtn.onclick = () => renderFullProfileContent(container, false, onClose);
+    }
+
+    // Save changes
+    const saveBtn = container.querySelector("#sv");
+    if (saveBtn) {
+      saveBtn.onclick = guard(async () => {
+        const newName = container.querySelector("#nm")?.value.trim() || "";
+        await api("/me", "PUT", { name: newName });
+        S.user.name = newName;
+
+        const loc = S.loc || (p.lat != null ? { lat: p.lat, lng: p.lng } : await getLoc().catch(() => null));
+
+        if (role === "worker") {
+          const skills = [...container.querySelectorAll(".chk input:checked")].map(x => x.value);
+          if (!skills.length) throw new Error(t("reqd"));
+          const payload = {
+            skills,
+            daily_rate: +(container.querySelector("#rt")?.value || 0),
+            experience_years: +(container.querySelector("#ex")?.value || 0),
+            village: container.querySelector("#vl")?.value.trim() || "",
+            radius_km: +(container.querySelector("#rd")?.value || 6),
+            lat: loc?.lat ?? 0,
+            lng: loc?.lng ?? 0
+          };
+          await api("/worker/profile", "PUT", payload);
+          S.profile = { ...S.profile, ...payload };
+          if (typeof fbSyncWorkerProfile === "function") fbSyncWorkerProfile(S.user.id, S.profile);
+        } else if (role === "contractor") {
+          const skills = [...container.querySelectorAll(".chk input:checked")].map(x => x.value);
+          const payload = {
+            company: container.querySelector("#pc")?.value.trim() || "",
+            skills,
+            village: container.querySelector("#pv")?.value.trim() || "",
+            radius_km: +(container.querySelector("#rd")?.value || 25),
+            min_budget: +(container.querySelector("#pm")?.value || 0),
+            experience_years: +(container.querySelector("#pe")?.value || 0),
+            about: container.querySelector("#pa")?.value.trim() || "",
+            lat: loc?.lat ?? 0,
+            lng: loc?.lng ?? 0
+          };
+          await api("/contractor/profile", "PUT", payload);
+          S.profile = { ...S.profile, ...payload };
+          if (typeof fbSyncContractorProfile === "function") fbSyncContractorProfile(S.user.id, S.profile);
+        }
+
+        if (typeof fbSyncUser === "function") fbSyncUser(S.user);
+        topbar();
+        toast("✅ " + t("saved"));
+        renderFullProfileContent(container, false, onClose);
+      });
+    }
+  } else {
+    // View mode handlers
+    const editBtn = container.querySelector("#prof_edit_btn");
+    if (editBtn) {
+      editBtn.onclick = () => renderFullProfileContent(container, true, onClose);
+    }
+
+    const setlocBtn = container.querySelector("#prof_setloc_btn");
+    if (setlocBtn) {
+      setlocBtn.onclick = guard(async () => {
+        await getLoc(true);
+        toast("📍 " + t("locok"));
+        renderFullProfileContent(container, false, onClose);
+      });
+    }
+
+    const logoutBtn = container.querySelector("#prof_logout_btn");
+    if (logoutBtn) {
+      logoutBtn.onclick = () => {
+        if (confirm(t("confirmLogout"))) {
+          if (onClose) onClose();
+          logout();
+        }
+      };
+    }
+  }
+}
+
 function tabs(list) {
   $("#tabs").innerHTML = list.map(([k, icon]) => `<button data-k="${k}" class="${S.tab === k ? "on" : ""}"><span>${icon}</span>${t(k)}</button>`).join("");
   document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => { S.tab = b.dataset.k; route(); });
 }
+
 function route() {
   topbar();
   if (!S.user) return showLogin();
@@ -193,28 +565,16 @@ async function showToday() {
 
 /* ---------------- worker: profile ---------------- */
 async function showProfile() {
-  const me = await api("/me"); const p = me.profile; S.profile = p;
-  const have = new Set(p.skills);
-  $("#app").innerHTML = `<div class="card"><h2>${t("profile")}</h2>
-    <label>${t("name")}</label><input id="nm" value="${esc(me.user.name)}">
-    <label>${t("skills")}</label><div class="chk">${S.meta.skills.map(s => `<label><input type="checkbox" value="${s.key}" ${have.has(s.key) ? "checked" : ""}>${esc(s[S.lang])}</label>`).join("")}</div>
-    <label>${t("rate")}</label><input id="rt" type="number" value="${p.daily_rate || ""}">
-    <label>${t("exp")}</label><input id="ex" type="number" value="${p.experience_years || ""}">
-    <label>${t("village")}</label><input id="vl" value="${esc(p.village)}">
-    <label>${t("radius")}: <b id="rv">${p.radius_km}</b> ${t("km")}</label><input id="rd" type="range" min="1" max="50" step="1" value="${p.radius_km}">
-    <button class="big sec" id="loc">${t("setloc")}</button><div class="sub" id="locs">${p.lat != null ? t("locok") : ""}</div>
-    <button class="big" id="sv">${t("save")}</button></div>`;
-  $("#rd").oninput = () => $("#rv").textContent = $("#rd").value;
-  $("#loc").onclick = guard(async () => { await getLoc(true); $("#locs").textContent = t("locok"); });
-  $("#sv").onclick = guard(async () => {
-    const loc = S.loc || (p.lat != null ? { lat: p.lat, lng: p.lng } : await getLoc());
-    const skills = [...document.querySelectorAll(".chk input:checked")].map(x => x.value);
-    if (!skills.length) throw new Error(t("reqd"));
-    await api("/me", "PUT", { name: $("#nm").value });
-    await api("/worker/profile", "PUT", { skills, daily_rate: +$("#rt").value || 0, experience_years: +$("#ex").value || 0,
-                                          village: $("#vl").value, lat: loc.lat, lng: loc.lng, radius_km: +$("#rd").value });
-    toast(t("saved"));
-  });
+  try {
+    const me = await api("/me");
+    S.user = { ...S.user, ...me.user };
+    S.profile = me.profile || {};
+    if (typeof fbSyncUser === "function") fbSyncUser(S.user);
+    if (typeof fbSyncWorkerProfile === "function" && S.profile) fbSyncWorkerProfile(S.user.id, S.profile);
+  } catch (e) {}
+
+  $("#app").innerHTML = `<div class="card" id="app_profile_inner" style="position:relative;"></div>`;
+  renderFullProfileContent($("#app_profile_inner"), false, null);
 }
 
 /* ---------------- worker: nearby jobs ---------------- */
@@ -253,7 +613,7 @@ async function loadWorkers() {
   const q = new URLSearchParams({ lat: S.loc.lat, lng: S.loc.lng, radius_km: f.radius, sort: f.sort, free_only: f.freeOnly });
   if (f.skill) q.set("skill", f.skill); if (f.date) q.set("on_date", f.date);
   const r = await api("/workers/search?" + q);
-  $("#list").innerHTML = r.workers.length ? r.workers.map(w => `<div class="card"><div class="row"><div><b>${esc(w.name)}</b> ${w.verified ? "✔️" : ""}
+  $("#list").innerHTML = r.workers.length ? r.workers.map(w => `<div class="card"><div class="row" style="align-items:flex-start"><div style="flex:0 0 auto; margin-right:8px;">${w.avatar ? `<div class="avatar-md"><img src="${esc(w.avatar)}" alt=""></div>` : `<div class="avatar-md">👷</div>`}</div><div style="flex:1"><b>${esc(w.name)}</b> ${w.verified ? "✔️" : ""}
     <div class="skills">${w.skills.map(s => `<span>${esc(skillName(s))}</span>`).join("")}</div>
     <div class="sub">${w.distance_km} ${t("km")} ${t("away")} · ${w.village ? esc(w.village) + " · " : ""}⭐ ${w.rating_avg} (${w.rating_count}) · ₹${w.daily_rate || "-"}</div></div>
     <div style="flex:0 0 auto"><span class="pill ${w.status}">${t("s_" + w.status)}</span></div></div>
@@ -473,15 +833,72 @@ async function doSos(bookingId) {
   alert(t("sosSent"));
 }
 
-/* ---------------- boot ---------------- */
-async function boot() {
-  S.meta = S.meta || await api("/meta");
-  if (S.token) {
-    try { const me = await api("/me"); S.user = me.user; S.profile = me.profile || null; } catch (e) { S.user = null; }
+/* ---------------- boot & resilience ---------------- */
+async function boot(attempt = 1) {
+  try {
+    S.meta = S.meta || await api("/meta");
+    if (S.token) {
+      try {
+        const me = await api("/me");
+        S.user = me.user;
+        S.profile = me.profile || null;
+        if (typeof fbSyncUser === "function") fbSyncUser(S.user);
+        if (typeof fbSyncWorkerProfile === "function" && S.user.role === "worker" && S.profile) fbSyncWorkerProfile(S.user.id, S.profile);
+        if (typeof fbSyncContractorProfile === "function" && S.user.role === "contractor" && S.profile) fbSyncContractorProfile(S.user.id, S.profile);
+      } catch (e) { S.user = null; }
+    }
+    if (S.user) { if (S.user.lang && !localStorage.getItem("ks_lang")) S.lang = S.user.lang; connectWS(); }
+    S.tab = S.tab || (S.user ? ({ worker: "today", customer: "find", contractor: "cdash" }[S.user.role]) : "find");
+    route();
+  } catch (err) {
+    if (attempt < 3) {
+      $("#app").innerHTML = `
+        <div class="card" style="text-align:center; padding:28px 16px;">
+          <div style="font-size:36px; margin-bottom:10px;">⏳</div>
+          <h3 style="margin:4px 0 8px;">सर्वर से कनेक्ट हो रहे हैं…</h3>
+          <div class="sub">Render सर्वर शुरू होने में कुछ सेकंड लग सकते हैं (कोशिश ${attempt}/3)…</div>
+        </div>
+      `;
+      await new Promise(r => setTimeout(r, 2500));
+      return boot(attempt + 1);
+    }
+    showBootError(err);
   }
-  if (S.user) { if (S.user.lang && !localStorage.getItem("ks_lang")) S.lang = S.user.lang; connectWS(); }
-  S.tab = S.tab || (S.user ? ({ worker: "today", customer: "find", contractor: "cdash" }[S.user.role]) : "find");
-  route();
 }
+
+function showBootError(err) {
+  const currentBase = getApiBase();
+  $("#app").innerHTML = `
+    <div class="card" style="text-align:center; padding:24px 16px;">
+      <div style="font-size:42px; margin-bottom:8px;">⚠️</div>
+      <h3 style="margin:4px 0 8px;">सर्वर से संपर्क नहीं हो पाया</h3>
+      <div class="sub" style="margin-bottom:14px;">
+        ${esc(err.message || "Failed to fetch")}<br>
+        (Render Free tier स्लीप मोड से जागने में 20-30 सेकंड ले सकता है)
+      </div>
+      <button class="big" id="retry_boot_btn" style="margin:8px 0;">🔄 फिर से कोशिश करें (Retry)</button>
+      <div style="margin-top:16px; text-align:left; border-top:1px solid #eee; padding-top:12px;">
+        <label style="font-size:12px; color:var(--mut);">Backend Server URL:</label>
+        <div class="row">
+          <input id="custom_api_url" value="${esc(currentBase)}" style="font-size:13px; padding:9px;">
+          <button class="sec" id="save_api_url_btn" style="padding:9px 12px; font-size:13px; flex:0 0 auto;">सेव</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const retryBtn = $("#retry_boot_btn");
+  if (retryBtn) retryBtn.onclick = () => boot(1);
+  const saveBtn = $("#save_api_url_btn");
+  if (saveBtn) {
+    saveBtn.onclick = () => {
+      const val = $("#custom_api_url").value.trim();
+      localStorage.setItem("mistri_api_base", val);
+      window.MISTRI_API_BASE = val;
+      toast("URL सेव हो गया, कनेक्ट कर रहे हैं…");
+      boot(1);
+    };
+  }
+}
+
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-window.addEventListener("load", () => boot().catch(e => { $("#app").innerHTML = `<div class="card">${esc(e.message)}</div>`; }));
+window.addEventListener("load", () => boot(1));

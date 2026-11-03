@@ -1,0 +1,34 @@
+{
+  "name": "mistribaiya-app",
+  "version": "1.0.0",
+  "description": "Gaon aur shehar ke ghar-malik ko aas-paas ka **free mistri / labour** dilane wala app. Mistri ko **roz kaam**, ghar-malik ko **kaam jaldi**, aur aapko **continuous income**.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anurag-kushwaha2207/MistriBhaiya.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Anurag-kushwaha2207/MistriBhaiya/issues"
+  },
+  "homepage": "https://github.com/Anurag-kushwaha2207/MistriBhaiya#readme",
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.2.1",
+    "vite": "^8.3.5"
+  }
+}

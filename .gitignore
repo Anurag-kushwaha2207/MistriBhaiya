@@ -8,3 +8,5 @@ __pycache__/
 cloudflared.exe
 *.exe
 .firebase/
+node_modules/
+dist/

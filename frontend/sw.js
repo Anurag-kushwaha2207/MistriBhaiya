@@ -1,6 +1,6 @@
 // Minimal service worker: caches the app shell so the app opens fast on weak networks. API calls are never cached.
-const CACHE = "mistribaiya-v4";
-const SHELL = ["/", "/index.html", "/config.js", "/app.js", "/negotiation.js", "/contractor.js", "/assistant.js", "/style.css", "/manifest.webmanifest"];
+const CACHE = "mistribaiya-v7";
+const SHELL = ["/", "/index.html", "/config.js", "/react-app.js", "/firebase-db.js", "/style.css", "/manifest.webmanifest"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener("fetch", e => {

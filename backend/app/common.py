@@ -71,8 +71,13 @@ def effective_status(wp, ranges, on_date: date, now: float) -> str:
     return "offline"
 
 def worker_public(u, wp, status, dist=None):
+    av = ""
+    try:
+        av = u["avatar"] or ""
+    except Exception:
+        pass
     d = {
-        "id": u["id"], "name": u["name"] or "Mistri", "skills": [s for s in (wp["skills"] or "").split(",") if s],
+        "id": u["id"], "name": u["name"] or "Mistri", "avatar": av, "skills": [s for s in (wp["skills"] or "").split(",") if s],
         "daily_rate": wp["daily_rate"], "experience_years": wp["experience_years"], "village": wp["village"],
         "radius_km": wp["radius_km"], "status": status, "rating_avg": round(wp["rating_avg"] or 0, 1),
         "rating_count": wp["rating_count"], "verified": bool(wp["verified"]),
@@ -92,7 +97,17 @@ async def push_worker_status(c, worker_id: int):
     await hub.worker_status(pub)
 
 def user_public(u):
-    return {"id": u["id"], "name": u["name"], "phone_last4": u["phone"][-4:], "role": u["role"], "lang": u["lang"], "is_admin": bool(u["is_admin"])}
+    av = ""
+    try:
+        av = u["avatar"] or ""
+    except Exception:
+        pass
+    phone = ""
+    try:
+        phone = u["phone"] or ""
+    except Exception:
+        pass
+    return {"id": u["id"], "name": u["name"], "phone": phone, "phone_last4": phone[-4:] if phone else "", "role": u["role"], "lang": u["lang"], "is_admin": bool(u["is_admin"]), "avatar": av}
 
 
 def need_role(u, role):

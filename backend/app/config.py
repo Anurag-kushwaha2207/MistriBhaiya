@@ -5,7 +5,20 @@ def _b(name, default="0"):
     return os.getenv(name, default).lower() in ("1", "true", "yes")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
-DB_PATH = os.getenv("DB_PATH", "kaamsetu.db")
+
+_raw_db = os.getenv("DB_PATH", "kaamsetu.db")
+if not os.path.isabs(_raw_db):
+    if os.path.exists(_raw_db):
+        DB_PATH = os.path.abspath(_raw_db)
+    else:
+        _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        _cand = os.path.join(_backend_dir, _raw_db)
+        if os.path.exists(_cand):
+            DB_PATH = _cand
+        else:
+            DB_PATH = os.path.abspath(_raw_db)
+else:
+    DB_PATH = _raw_db
 DEV_MODE = _b("DEV_MODE", "1")            # DEV_MODE=1 returns the OTP in the API response. NEVER use in production.
 ADMIN_PHONES = {p.strip() for p in os.getenv("ADMIN_PHONES", "").split(",") if p.strip()}
 

@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from . import firebase_sync
 from .common import *            # helpers
 from .db import db
 from .realtime import hub
@@ -71,6 +72,10 @@ async def counter(kind: str, rid: int, req: CounterReq, u=Depends(current_user))
         set_offer(c, kind, r, u, req.rate, req.days, req.note)
     await hub.to_user(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid,
                               "status": "countered", "rate": req.rate, "days": req.days or r["days"], "from": u["name"] or "User"})
+    if kind == "bookings":
+        firebase_sync.sync_booking(rid)
+    else:
+        firebase_sync.sync_project(rid)
     return {"ok": True}
 
 @router.post("/api/{kind}/{rid}/accept")
@@ -92,6 +97,11 @@ async def accept(kind: str, rid: int, u=Depends(current_user)):
             await push_worker_status(c, r["worker_id"])
         else:
             c.execute("UPDATE projects SET status='accepted',updated_at=? WHERE id=?", (now, rid))
+    if kind == "bookings":
+        firebase_sync.sync_booking(rid)
+        firebase_sync.sync_worker_profile(r["worker_id"])
+    else:
+        firebase_sync.sync_project(rid)
     await hub.to_user(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid, "status": "accepted"})
     return {"ok": True}
 
@@ -102,6 +112,10 @@ async def reject(kind: str, rid: int, u=Depends(current_user)):
         if r["status"] != "requested":
             raise HTTPException(400, "Cannot reject now")
         c.execute(f"UPDATE {kind} SET status='rejected',updated_at=? WHERE id=?", (time.time(), rid))
+    if kind == "bookings":
+        firebase_sync.sync_booking(rid)
+    else:
+        firebase_sync.sync_project(rid)
     await hub.to_user(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid, "status": "rejected"})
     return {"ok": True}
 

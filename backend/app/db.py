@@ -9,6 +9,7 @@ USERS_DDL = """CREATE TABLE IF NOT EXISTS users(
   role TEXT NOT NULL CHECK(role IN ('worker','customer','contractor')),
   lang TEXT DEFAULT 'hi',
   is_admin INTEGER DEFAULT 0,
+  avatar TEXT DEFAULT '',
   created_at REAL NOT NULL
 );
 """
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users(
   role TEXT NOT NULL CHECK(role IN ('worker','customer','contractor')),
   lang TEXT DEFAULT 'hi',
   is_admin INTEGER DEFAULT 0,
+  avatar TEXT DEFAULT '',
   created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS otps(
@@ -158,6 +160,7 @@ def _add_cols(c, table, items):
 
 def migrate(c):
     """Upgrades databases created by older versions (safe to run on every start)."""
+    _add_cols(c, "users", [("avatar", "TEXT DEFAULT ''")])
     _add_cols(c, "bookings", [("start_otp", "TEXT DEFAULT ''"), ("started_at", "REAL"), ("instant_id", "INTEGER"),
                               ("offer_by", "INTEGER"), ("offer_rounds", "INTEGER DEFAULT 0")])
     _add_cols(c, "job_interests", [("rate", "INTEGER DEFAULT 0")])
@@ -167,7 +170,9 @@ def migrate(c):
         c.commit()
         c.execute("PRAGMA foreign_keys=OFF")
         c.execute(USERS_DDL.replace("IF NOT EXISTS users(", "users_new(").replace("CREATE TABLE users_new(", "CREATE TABLE users_new(", 1))
-        c.execute("INSERT INTO users_new(id,phone,name,role,lang,is_admin,created_at) SELECT id,phone,name,role,lang,is_admin,created_at FROM users")
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
+        av_col = "avatar" if "avatar" in cols else "'' AS avatar"
+        c.execute(f"INSERT INTO users_new(id,phone,name,role,lang,is_admin,avatar,created_at) SELECT id,phone,name,role,lang,is_admin,{av_col},created_at FROM users")
         c.execute("DROP TABLE users")
         c.execute("ALTER TABLE users_new RENAME TO users")
         c.commit()

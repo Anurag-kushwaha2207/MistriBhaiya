@@ -10,7 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from . import config
+from . import config, firebase_sync
 from .calls import connect_call
 from .common import *
 from .db import db
@@ -42,6 +42,7 @@ def contractor_profile(req: ContractorProfile, u=Depends(current_user)):
     with db() as c:
         c.execute("UPDATE contractor_profiles SET company=?,skills=?,village=?,lat=?,lng=?,radius_km=?,min_budget=?,experience_years=?,about=? WHERE user_id=?",
                   (req.company, ",".join(skills), req.village, req.lat, req.lng, clamp_radius(req.radius_km), req.min_budget, req.experience_years, req.about, u["id"]))
+    firebase_sync.sync_contractor_profile(u["id"])
     return {"ok": True}
 
 @router.get("/api/contractors/search")
