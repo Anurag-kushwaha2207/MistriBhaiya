@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, getLoc } from '../api';
 import { syncJob } from '../firebase';
+import { CITIES, getCityNameFromCoords } from './ProfileModal';
 
 export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpenBooking, onStartCall, showToast, t }) {
   const [activeSubTab, setActiveSubTab] = useState('post'); // 'post' or 'mine'
@@ -10,6 +11,8 @@ export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpen
   const [startDate, setStartDate] = useState('');
   const [days, setDays] = useState(1);
   const [address, setAddress] = useState('');
+  const [jobCity, setJobCity] = useState('');
+  const [jobCoords, setJobCoords] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // My jobs list
@@ -46,14 +49,18 @@ export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpen
       try { loc = await getLoc(false); } catch (e) {}
 
       const todayStr = new Date().toISOString().split('T')[0];
+      const jobLat = jobCoords?.lat ?? loc?.lat;
+      const jobLng = jobCoords?.lng ?? loc?.lng;
+      const fullAddress = [address, jobCity].filter(Boolean).join(', ');
+
       const payload = {
         skill,
         description: desc,
         budget: budget ? parseInt(budget, 10) : 0,
         start_date: startDate || todayStr,
         days: parseInt(days, 10) || 1,
-        address: address || '',
-        ...(loc ? { lat: loc.lat, lng: loc.lng } : {})
+        address: fullAddress || '',
+        ...(jobLat != null ? { lat: jobLat, lng: jobLng } : {})
       };
 
       const res = await api('/jobs', 'POST', payload, token);
@@ -65,6 +72,8 @@ export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpen
       setDesc('');
       setBudget('');
       setAddress('');
+      setJobCity('');
+      setJobCoords(null);
       setActiveSubTab('mine');
       loadMyJobs();
     } catch (err) {
@@ -186,6 +195,48 @@ export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpen
               onChange={(e) => setAddress(e.target.value)}
               placeholder="गाँव / मोहल्ला / मकान नं."
             />
+
+            <label>🏙️ काम का शहर / लोकेशन (City)</label>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <select
+                value={jobCity}
+                onChange={(e) => {
+                  setJobCity(e.target.value);
+                  const found = CITIES.find(c => c.name === e.target.value);
+                  if (found) setJobCoords({ lat: found.lat, lng: found.lng });
+                }}
+                style={{ flex: 1, padding: '8px' }}
+              >
+                <option value="">-- शहर चुनें (Delhi, Noida, Lucknow, etc.) --</option>
+                {CITIES.map(c => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="sec"
+                style={{ padding: '8px 12px', fontSize: '13px', whiteSpace: 'nowrap' }}
+                onClick={async () => {
+                  try {
+                    showToast("📍 लोकेशन ले रहे हैं...");
+                    const loc = await getLoc(true);
+                    setJobCoords({ lat: loc.lat, lng: loc.lng });
+                    const name = getCityNameFromCoords(loc.lat, loc.lng);
+                    if (name) setJobCity(name);
+                    showToast("📍 लोकेशन प्राप्त हुई!");
+                  } catch (e) {
+                    showToast(e.message || "GPS चालू करें");
+                  }
+                }}
+              >
+                📡 GPS लें
+              </button>
+            </div>
+            {jobCoords && (
+              <div style={{ fontSize: '12px', color: 'var(--g)', marginBottom: '12px' }}>
+                📍 काम की लोकेशन: <b>{jobCity || `${jobCoords.lat.toFixed(3)}, ${jobCoords.lng.toFixed(3)}`}</b>
+              </div>
+            )}
 
             <div style={{ marginTop: '16px' }}>
               <button type="submit" className="big" disabled={loading}>

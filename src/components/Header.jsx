@@ -17,17 +17,33 @@ export default function Header({ lang, onToggleLang, user, onOpenProfile, t }) {
           <button
             className="sec profile-btn"
             id="profb"
-            title={t('viewProfile')}
+            title={user.name || t('viewProfile')}
             onClick={onOpenProfile}
+            style={{
+              padding: '2px',
+              borderRadius: '50%',
+              width: '38px',
+              height: '38px',
+              minWidth: '38px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '2px solid rgba(255, 255, 255, 0.6)',
+              background: '#fff',
+              overflow: 'hidden',
+              cursor: 'pointer',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.2)'
+            }}
           >
-            <span className="avatar-sm">
-              {user.avatar ? (
-                <img src={user.avatar} alt="" />
-              ) : (
-                '👤'
-              )}
-            </span>
-            <span>{user.name || t('profile')}</span>
+            {user.avatar ? (
+              <img
+                src={user.avatar}
+                alt={user.name || 'Profile'}
+                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+              />
+            ) : (
+              <span style={{ fontSize: '18px', lineHeight: '1' }}>👤</span>
+            )}
           </button>
         )}
       </span>

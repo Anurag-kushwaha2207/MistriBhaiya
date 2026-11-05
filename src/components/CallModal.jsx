@@ -1,5 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+// Sound & Vibration helper for in-app calling
+let _callAudioCtx = null;
+let _ringInterval = null;
+
+function playRingTone() {
+  try {
+    _callAudioCtx = _callAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = _callAudioCtx.createOscillator();
+    const gain = _callAudioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, _callAudioCtx.currentTime);
+    osc.frequency.setValueAtTime(600, _callAudioCtx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.25, _callAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, _callAudioCtx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(_callAudioCtx.destination);
+    osc.start();
+    osc.stop(_callAudioCtx.currentTime + 0.38);
+    if (navigator.vibrate) navigator.vibrate([350, 150, 350]);
+  } catch (e) {}
+}
+
+function startRingtone() {
+  stopRingtone();
+  playRingTone();
+  _ringInterval = setInterval(playRingTone, 1400);
+}
+
+function stopRingtone() {
+  if (_ringInterval) {
+    clearInterval(_ringInterval);
+    _ringInterval = null;
+  }
+}
+
 export default function CallModal({
   callTarget, // { name, phone, worker_id, customer_id, booking_id }
   incomingCall, // { from, caller, booking_id, target_user_id, offer }
@@ -9,7 +44,7 @@ export default function CallModal({
   showToast,
   t
 }) {
-  const [phase, setPhase] = useState('choice'); // 'choice' | 'calling' | 'incoming' | 'connected'
+  const [phase, setPhase] = useState(incomingCall ? 'incoming' : 'choice'); // 'choice' | 'calling' | 'incoming' | 'connected'
   const [duration, setDuration] = useState(0);
   const pcRef = useRef(null);
   const streamRef = useRef(null);
@@ -24,15 +59,18 @@ export default function CallModal({
     if (!ws || ws.readyState !== 1) return;
     const bookingId = callTarget?.booking_id || incomingCall?.booking_id || null;
     const targetUserId = incomingCall ? incomingCall.from : (callTarget?.worker_id || callTarget?.customer_id || null);
+    const targetPhone = incomingCall ? (incomingCall.caller?.phone || null) : (callTarget?.phone || null);
     ws.send(JSON.stringify({
       type: 'rtc',
       booking_id: bookingId,
       target_user_id: targetUserId,
+      phone: targetPhone,
       data
     }));
   };
 
   const cleanupCall = () => {
+    stopRingtone();
     clearInterval(timerRef.current);
     if (pcRef.current) {
       try { pcRef.current.close(); } catch (e) {}
@@ -46,6 +84,7 @@ export default function CallModal({
   };
 
   const handleHangup = () => {
+    stopRingtone();
     sendRtc({ kind: 'hangup' });
     cleanupCall();
     onClose();
@@ -113,6 +152,7 @@ export default function CallModal({
 
   // Answer incoming call
   const answerCall = async () => {
+    stopRingtone();
     if (!incomingCall?.offer) return;
     try {
       const pc = await preparePeer();
@@ -136,6 +176,7 @@ export default function CallModal({
   };
 
   const declineIncomingCall = () => {
+    stopRingtone();
     sendRtc({ kind: 'hangup' });
     cleanupCall();
     onClose();
@@ -145,7 +186,11 @@ export default function CallModal({
   useEffect(() => {
     if (incomingCall) {
       setPhase('incoming');
+      startRingtone();
     }
+    return () => {
+      stopRingtone();
+    };
   }, [incomingCall]);
 
   // Handle external WebSocket signal events

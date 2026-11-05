@@ -2,6 +2,71 @@ import React, { useState, useRef } from 'react';
 import { api, getLoc, compressAndResizeImage } from '../api';
 import { syncUser, syncWorkerProfile, syncContractorProfile } from '../firebase';
 
+export const CITIES = [
+  { name: 'दिल्ली (Delhi / NCR)', lat: 28.6139, lng: 77.2090 },
+  { name: 'नोएडा (Noida)', lat: 28.5355, lng: 77.3910 },
+  { name: 'ग्रेटर नोएडा (Greater Noida)', lat: 28.4744, lng: 77.5040 },
+  { name: 'गाजियाबाद (Ghaziabad)', lat: 28.6692, lng: 77.4538 },
+  { name: 'गुरुग्राम / गुड़गांव (Gurugram)', lat: 28.4595, lng: 77.0266 },
+  { name: 'फरीदाबाद (Faridabad)', lat: 28.4089, lng: 77.3178 },
+  { name: 'लखनऊ (Lucknow)', lat: 26.8467, lng: 80.9462 },
+  { name: 'कानपुर (Kanpur)', lat: 26.4499, lng: 80.3319 },
+  { name: 'प्रयागराज / इलाहाबाद (Prayagraj)', lat: 25.4358, lng: 81.8463 },
+  { name: 'वाराणसी / बनारस (Varanasi)', lat: 25.3176, lng: 82.9739 },
+  { name: 'गोरखपुर (Gorakhpur)', lat: 26.7606, lng: 83.3732 },
+  { name: 'आगरा (Agra)', lat: 27.1767, lng: 78.0081 },
+  { name: 'मेरठ (Meerut)', lat: 28.9845, lng: 77.7064 },
+  { name: 'बरेली (Bareilly)', lat: 28.3670, lng: 79.4304 },
+  { name: 'अलीगढ़ (Aligarh)', lat: 27.8974, lng: 78.0880 },
+  { name: 'मुरादाबाद (Moradabad)', lat: 28.8386, lng: 78.7733 },
+  { name: 'सहारनपुर (Saharanpur)', lat: 29.9678, lng: 77.5460 },
+  { name: 'झांसी (Jhansi)', lat: 25.4484, lng: 78.5685 },
+  { name: 'अयोध्या (Ayodhya)', lat: 26.7922, lng: 82.1998 },
+  { name: 'पटना (Patna)', lat: 25.5941, lng: 85.1376 },
+  { name: 'गया (Gaya)', lat: 24.7914, lng: 85.0002 },
+  { name: 'मुज़फ़्फ़रपुर (Muzaffarpur)', lat: 26.1209, lng: 85.3647 },
+  { name: 'भागलपुर (Bhagalpur)', lat: 25.2425, lng: 86.9842 },
+  { name: 'दरभंगा (Darbhanga)', lat: 26.1542, lng: 85.8918 },
+  { name: 'भोपाल (Bhopal)', lat: 23.2599, lng: 77.4126 },
+  { name: 'इंदौर (Indore)', lat: 22.7196, lng: 75.8577 },
+  { name: 'ग्वालियर (Gwalior)', lat: 26.2183, lng: 78.1828 },
+  { name: 'जबलपुर (Jabalpur)', lat: 23.1815, lng: 79.9864 },
+  { name: 'उज्जैन (Ujjain)', lat: 23.1765, lng: 75.7885 },
+  { name: 'जयपुर (Jaipur)', lat: 26.9124, lng: 75.7873 },
+  { name: 'जोधपुर (Jodhpur)', lat: 26.2389, lng: 73.0243 },
+  { name: 'कोटा (Kota)', lat: 25.2138, lng: 75.8648 },
+  { name: 'उदयपुर (Udaipur)', lat: 24.5854, lng: 73.7125 },
+  { name: 'रांची (Ranchi)', lat: 23.3441, lng: 85.3096 },
+  { name: 'जमशेदपुर (Jamshedpur)', lat: 22.8046, lng: 86.2029 },
+  { name: 'धनबाद (Dhanbad)', lat: 23.7957, lng: 86.4304 },
+  { name: 'मुंबई (Mumbai)', lat: 19.0760, lng: 72.8777 },
+  { name: 'पुणे (Pune)', lat: 18.5204, lng: 73.8567 },
+  { name: 'अहमदाबाद (Ahmedabad)', lat: 23.0225, lng: 72.5714 },
+  { name: 'सूरत (Surat)', lat: 21.1702, lng: 72.8311 },
+  { name: 'कोलकाता (Kolkata)', lat: 22.5726, lng: 88.3639 },
+  { name: 'चंडीगढ़ (Chandigarh)', lat: 30.7333, lng: 76.7794 },
+  { name: 'देहरादून (Dehradun)', lat: 30.3165, lng: 78.0322 },
+  { name: 'हरिद्वार (Haridwar)', lat: 29.9457, lng: 78.1642 },
+  { name: 'रायपुर (Raipur)', lat: 21.2514, lng: 81.6296 }
+];
+
+export function getCityNameFromCoords(lat, lng) {
+  if (lat == null || lng == null) return null;
+  let closest = null;
+  let minDist = 999999;
+  for (const c of CITIES) {
+    const d = Math.hypot(c.lat - lat, c.lng - lng);
+    if (d < minDist) {
+      minDist = d;
+      closest = c;
+    }
+  }
+  if (minDist < 0.6) {
+    return closest.name;
+  }
+  return `${Number(lat).toFixed(3)}, ${Number(lng).toFixed(3)}`;
+}
+
 export default function ProfileModal({
   user,
   profile,
@@ -28,6 +93,8 @@ export default function ProfileModal({
   const [company, setCompany] = useState(profile?.company || '');
   const [minBudget, setMinBudget] = useState(profile?.min_budget || '');
   const [about, setAbout] = useState(profile?.about || '');
+  const [editLat, setEditLat] = useState(profile?.lat ?? null);
+  const [editLng, setEditLng] = useState(profile?.lng ?? null);
 
   const parseSkills = (s) => {
     if (!s) return [];
@@ -77,10 +144,31 @@ export default function ProfileModal({
     }
   };
 
+  const handleSelectCity = async (cityName) => {
+    const found = CITIES.find(c => c.name === cityName);
+    if (!found) return;
+    setEditLat(found.lat);
+    setEditLng(found.lng);
+    try {
+      if (role === 'worker') {
+        await api('/worker/location', 'POST', { lat: found.lat, lng: found.lng }, token);
+      } else if (role === 'contractor') {
+        await api('/contractor/location', 'POST', { lat: found.lat, lng: found.lng }, token);
+      }
+      const updatedProfile = { ...profile, lat: found.lat, lng: found.lng };
+      onUpdateProfile(updatedProfile);
+      if (role === 'worker') syncWorkerProfile(user.id, updatedProfile);
+      if (role === 'contractor') syncContractorProfile(user.id, updatedProfile);
+      showToast(`📍 ${found.name} सेट हो गया!`);
+    } catch (e) {}
+  };
+
   const handleUpdateLocation = async () => {
     try {
-      showToast("📍 लोकेशन ले रहे हैं...");
+      showToast("📍 लाइव GPS लोकेशन ले रहे हैं...");
       const loc = await getLoc(true);
+      setEditLat(loc.lat);
+      setEditLng(loc.lng);
       if (role === 'worker') {
         await api('/worker/location', 'POST', { lat: loc.lat, lng: loc.lng }, token);
       } else if (role === 'contractor') {
@@ -116,8 +204,8 @@ export default function ProfileModal({
       }
 
       // Resolve coordinates safely
-      let curLat = profile?.lat;
-      let curLng = profile?.lng;
+      let curLat = editLat != null ? editLat : profile?.lat;
+      let curLng = editLng != null ? editLng : profile?.lng;
       if (curLat == null || curLng == null) {
         try {
           const loc = await getLoc(false);
@@ -126,8 +214,8 @@ export default function ProfileModal({
         } catch (e) {}
       }
       if (curLat == null || curLng == null) {
-        curLat = 26.4505;
-        curLng = 80.1912;
+        curLat = 28.6139; // Delhi center default
+        curLng = 77.2090;
       }
 
       // Update role-specific profile
@@ -353,21 +441,32 @@ export default function ProfileModal({
               </>
             )}
 
-            <div style={{ marginTop: '14px', padding: '10px', background: '#f5f7f5', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <span style={{ fontSize: '12px', color: 'var(--mut)', display: 'block' }}>लोकेशन (GPS)</span>
-                <b style={{ fontSize: '13px', color: profile?.lat != null ? 'var(--g)' : 'var(--red)' }}>
-                  {profile?.lat != null ? `📍 ${Number(profile.lat).toFixed(3)}, ${Number(profile.lng).toFixed(3)}` : '❌ सेट नहीं'}
-                </b>
+            <div style={{ marginTop: '14px', padding: '12px', background: '#f5f7f5', borderRadius: '10px', border: '1px solid #e0e7e0' }}>
+              <label style={{ fontWeight: 'bold', marginBottom: '6px', display: 'block' }}>🏙️ अपना शहर / ज़िला चुनें (City / Location)</label>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <select
+                  value={getCityNameFromCoords(editLat, editLng) || ''}
+                  onChange={(e) => handleSelectCity(e.target.value)}
+                  style={{ flex: 1, padding: '8px', fontSize: '13px' }}
+                >
+                  <option value="">-- शहर चुनें (Delhi, Noida, Lucknow, etc.) --</option>
+                  {CITIES.map(c => (
+                    <option key={c.name} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="sec"
+                  style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                  onClick={handleUpdateLocation}
+                  title="सटीक GPS लोकेशन"
+                >
+                  📡 लाइव GPS
+                </button>
               </div>
-              <button
-                type="button"
-                className="sec"
-                style={{ padding: '6px 12px', fontSize: '13px' }}
-                onClick={handleUpdateLocation}
-              >
-                📍 GPS लें
-              </button>
+              <div style={{ fontSize: '12px', color: editLat != null ? 'var(--g)' : 'var(--red)' }}>
+                वर्तमान लोकेशन: <b>{editLat != null ? `📍 ${getCityNameFromCoords(editLat, editLng)} (${Number(editLat).toFixed(3)}, ${Number(editLng).toFixed(3)})` : '❌ सेट नहीं'}</b>
+              </div>
             </div>
 
             <div className="profile-actions" style={{ marginTop: '16px' }}>
@@ -409,10 +508,20 @@ export default function ProfileModal({
                   ) : '● एक्टिव'}
                 </div>
               </div>
-              <div className="info-cell">
-                <div className="sub">लोकेशन (GPS)</div>
-                <div className="val" style={{ fontSize: '12px' }}>
-                  {profile?.lat != null ? `${Number(profile.lat).toFixed(3)}, ${Number(profile.lng).toFixed(3)}` : '❌ सेट नहीं'}
+              <div className="info-cell" style={{ gridColumn: 'span 2' }}>
+                <div className="sub">📍 शहर / लोकेशन (GPS)</div>
+                <div className="val" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 'bold', color: profile?.lat != null ? 'var(--g)' : 'var(--red)' }}>
+                    {profile?.lat != null ? `📍 ${getCityNameFromCoords(profile.lat, profile.lng)}` : '❌ सेट नहीं'}
+                  </span>
+                  <button
+                    type="button"
+                    className="sec"
+                    style={{ padding: '4px 10px', fontSize: '12px' }}
+                    onClick={handleUpdateLocation}
+                  >
+                    📡 GPS अपडेट
+                  </button>
                 </div>
               </div>
             </div>

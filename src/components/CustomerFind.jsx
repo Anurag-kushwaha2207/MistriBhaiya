@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { api, getLoc } from '../api';
+import { CITIES, getCityNameFromCoords } from './ProfileModal';
 
 export default function CustomerFind({ token, meta, lang, onOpenBooking, onStartCall, onStartInstant, showToast, t }) {
   const [skill, setSkill] = useState('');
-  const [radius, setRadius] = useState(15);
+  const [radius, setRadius] = useState(25);
   const [freeOnly, setFreeOnly] = useState(false);
   const [date, setDate] = useState('');
   const [sort, setSort] = useState('smart');
+  const [selectedCity, setSelectedCity] = useState('');
+  const [cityCoords, setCityCoords] = useState(null);
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -22,9 +25,11 @@ export default function CustomerFind({ token, meta, lang, onOpenBooking, onStart
       if (freeOnly) q.set('free_only', 'true');
       if (date) q.set('date', date);
       if (sort) q.set('sort', sort);
-      if (loc) {
-        q.set('lat', loc.lat);
-        q.set('lng', loc.lng);
+      const effectiveLat = cityCoords?.lat ?? loc?.lat;
+      const effectiveLng = cityCoords?.lng ?? loc?.lng;
+      if (effectiveLat != null && effectiveLng != null) {
+        q.set('lat', effectiveLat);
+        q.set('lng', effectiveLng);
       }
 
       const res = await api('/workers?' + q.toString(), 'GET', null, token);
@@ -38,7 +43,7 @@ export default function CustomerFind({ token, meta, lang, onOpenBooking, onStart
 
   useEffect(() => {
     loadWorkers();
-  }, [skill, radius, freeOnly, date, sort, token]);
+  }, [skill, radius, freeOnly, date, sort, cityCoords, token]);
 
   const allSkills = meta?.skills || [];
   const getSkillLabel = (k) => {
@@ -78,6 +83,45 @@ export default function CustomerFind({ token, meta, lang, onOpenBooking, onStart
             <option key={s.key} value={s.key}>{s[lang] || s.key}</option>
           ))}
         </select>
+
+        <div style={{ marginTop: '8px' }}>
+          <label>🏙️ शहर / क्षेत्र (City)</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <select
+              value={selectedCity}
+              onChange={(e) => {
+                setSelectedCity(e.target.value);
+                const found = CITIES.find(c => c.name === e.target.value);
+                setCityCoords(found ? { lat: found.lat, lng: found.lng } : null);
+              }}
+              style={{ flex: 1, padding: '8px' }}
+            >
+              <option value="">-- सभी शहर / आस-पास --</option>
+              {CITIES.map(c => (
+                <option key={c.name} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="sec"
+              style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}
+              onClick={async () => {
+                try {
+                  showToast("📍 लोकेशन ले रहे हैं...");
+                  const loc = await getLoc(true);
+                  setCityCoords({ lat: loc.lat, lng: loc.lng });
+                  const cname = getCityNameFromCoords(loc.lat, loc.lng);
+                  if (cname) setSelectedCity(cname);
+                  showToast("📍 लोकेशन अपडेट हो गई!");
+                } catch (e) {
+                  showToast(e.message || "GPS चालू करें");
+                }
+              }}
+            >
+              📡 GPS
+            </button>
+          </div>
+        </div>
 
         <div className="row" style={{ marginTop: '6px' }}>
           <div>

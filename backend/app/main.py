@@ -308,7 +308,7 @@ def nearby_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, 
             continue
         if worker_skills and not all_skills and not skill and j["skill"] not in worker_skills:
             continue
-        out.append({"id": j["id"], "skill": j["skill"], "description": j["description"], "address": j["address"],
+        out.append({"id": j["id"], "customer_id": j["customer_id"], "skill": j["skill"], "description": j["description"], "address": j["address"],
                     "start_date": j["start_date"], "days": j["days"], "budget": j["budget"],
                     "customer_name": j["customer_name"] or "Customer", "customer_phone": j["customer_phone"] or "",
                     "distance_km": round(d, 1) if d is not None else None,
@@ -936,9 +936,10 @@ def admin_verify(wid: int, u=Depends(current_user)):
 
 # ---------------------------------------------------------------- realtime
 async def relay_rtc(ws, uid, msg):
-    """In-app voice call signalling (WebRTC). Allows calling via booking_id or target_user_id."""
+    """In-app voice call signalling (WebRTC). Allows calling via booking_id, target_user_id, or phone."""
     bid = msg.get("booking_id")
     target_uid = msg.get("target_user_id")
+    phone = msg.get("phone")
     data = msg.get("data") or {}
     other = None
     with db() as c:
@@ -946,8 +947,13 @@ async def relay_rtc(ws, uid, msg):
             b = c.execute("SELECT * FROM bookings WHERE id=?", (bid,)).fetchone()
             if b and uid in (b["worker_id"], b["customer_id"]):
                 other = b["worker_id"] if uid == b["customer_id"] else b["customer_id"]
-        elif target_uid:
+        if not other and target_uid:
             u = c.execute("SELECT id FROM users WHERE id=?", (target_uid,)).fetchone()
+            if u:
+                other = u["id"]
+        if not other and phone:
+            p = norm_phone(str(phone))
+            u = c.execute("SELECT id FROM users WHERE phone=?", (p,)).fetchone()
             if u:
                 other = u["id"]
         if not other:
@@ -959,7 +965,7 @@ async def relay_rtc(ws, uid, msg):
     with db() as c:
         row = c.execute("SELECT name, phone FROM users WHERE id=?", (uid,)).fetchone()
         if row:
-            caller_user = {"name": row["name"] or "Caller", "id": uid}
+            caller_user = {"name": row["name"] or "Caller", "phone": row["phone"], "id": uid}
     sent = await hub.to_user(other, {
         "type": "rtc",
         "booking_id": bid,
