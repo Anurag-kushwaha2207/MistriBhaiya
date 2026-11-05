@@ -96,3 +96,4 @@ export function playMessageChime(isOutgoing = false) {
     }
   } catch (e) {}
 }
+

@@ -14,7 +14,7 @@ services:
     healthCheckPath: /healthz
     # disk: { name: data, mountPath: /data, sizeGB: 1 } # Uncomment for Render Starter ($7/mo)
     envVars:
-      - { key: SECRET_KEY, generateValue: true }
+      - { key: SECRET_KEY, value: "mistribhaiya-super-secret-jwt-key-2026-prod" }
       - { key: DEV_MODE, value: "1" } # "1" during setup/testing to see OTP, change to "0" for production
       - { key: DB_PATH, value: /tmp/mistribaiya.db } # Use /data/mistribaiya.db if persistent disk is attached
       - { key: SMS_PROVIDER, value: console }

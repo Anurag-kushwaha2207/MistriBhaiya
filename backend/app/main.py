@@ -1,4 +1,4 @@
-import asyncio, os, secrets, time
+import asyncio, os, secrets, threading, time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -31,6 +31,7 @@ app.add_middleware(
 )
 
 init_db()   # idempotent: creates tables if missing
+threading.Thread(target=firebase_sync.restore_all_from_firestore, daemon=True).start()
 
 # ---------------------------------------------------------------- models
 class OtpReq(BaseModel):
@@ -165,6 +166,8 @@ def check_phone(req: CheckPhoneReq):
     phone = norm_phone(req.phone)
     with db() as c:
         u = c.execute("SELECT id, name, role, phone, password_hash FROM users WHERE phone=?", (phone,)).fetchone()
+    if not u:
+        u = firebase_sync.restore_user_if_missing(phone)
     if u:
         return {
             "exists": True,
@@ -192,12 +195,15 @@ def login_password(req: LoginPasswordReq):
     rate_limit("pw:" + phone, 10, 300)
     with db() as c:
         u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
-        if not u:
-            raise HTTPException(404, "अकाउंट नहीं मिला। कृपया पहले रजिस्टर करें। (Account not found. Please register first.)")
-        if not u["password_hash"]:
-            raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
-        if not verify_password(req.password, u["password_hash"]):
-            raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
+    if not u:
+        u = firebase_sync.restore_user_if_missing(phone)
+    if not u:
+        raise HTTPException(404, "अकाउंट नहीं मिला। कृपया पहले रजिस्टर करें। (Account not found. Please register first.)")
+    if not u["password_hash"]:
+        raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
+    if not verify_password(req.password, u["password_hash"]):
+        raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
+    with db() as c:
         prof = get_user_profile(c, u)
     return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
 
@@ -220,11 +226,14 @@ def forgot_password(req: ForgotPasswordReq):
         c.execute("DELETE FROM otps WHERE phone=?", (phone,))
         u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
         if not u:
+            u = firebase_sync.restore_user_if_missing(phone)
+        if not u:
             raise HTTPException(404, "यह मोबाइल नंबर रजिस्टर नहीं है (User with this phone not found)")
         pw_hash = hash_password(req.new_password.strip())
         c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
         u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
         prof = get_user_profile(c, u)
+    firebase_sync.save_credential(phone, u["id"], pw_hash, u["name"], u["role"])
     firebase_sync.sync_user(u["id"])
     return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
 
@@ -247,6 +256,9 @@ def verify(req: VerifyReq):
         c.execute("DELETE FROM otps WHERE phone=?", (phone,))
         u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
         if not u:
+            u = firebase_sync.restore_user_if_missing(phone)
+        pw_hash = ""
+        if not u:
             pw_hash = hash_password(req.password.strip()) if req.password else ""
             cur = c.execute("INSERT INTO users(phone,name,role,password_hash,is_admin,created_at) VALUES(?,?,?,?,?,?)",
                             (phone, req.name.strip()[:60], req.role, pw_hash, 1 if phone in config.ADMIN_PHONES else 0, time.time()))
@@ -265,13 +277,19 @@ def verify(req: VerifyReq):
                 pw_hash = hash_password(req.password.strip())
                 c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
                 u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
+            else:
+                pw_hash = u["password_hash"] or ""
         prof = get_user_profile(c, u)
-    firebase_sync.sync_user(u["id"])
-    if u["role"] == "worker":
-        firebase_sync.sync_worker_profile(u["id"])
-    elif u["role"] == "contractor":
-        firebase_sync.sync_contractor_profile(u["id"])
-    return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
+    u_dict = dict(u)
+    final_pw = u_dict.get("password_hash") or pw_hash
+    if final_pw:
+        firebase_sync.save_credential(phone, u_dict["id"], final_pw, u_dict.get("name") or "", u_dict.get("role") or "customer")
+    firebase_sync.sync_user(u_dict["id"])
+    if u_dict.get("role") == "worker":
+        firebase_sync.sync_worker_profile(u_dict["id"])
+    elif u_dict.get("role") == "contractor":
+        firebase_sync.sync_contractor_profile(u_dict["id"])
+    return {"token": make_token(u_dict["id"]), "user": user_public(u_dict), "profile": prof}
 
 @app.get("/api/me")
 def me(u=Depends(current_user)):
@@ -289,11 +307,14 @@ def update_me(req: MeUpdate, u=Depends(current_user)):
             c.execute("UPDATE users SET lang=? WHERE id=?", (req.lang, u["id"]))
         if req.avatar is not None:
             c.execute("UPDATE users SET avatar=? WHERE id=?", (req.avatar, u["id"]))
-    firebase_sync.sync_user(u["id"])
-    if u["role"] == "worker":
-        firebase_sync.sync_worker_profile(u["id"])
-    elif u["role"] == "contractor":
-        firebase_sync.sync_contractor_profile(u["id"])
+    u_dict = dict(u)
+    if req.name is not None and u_dict.get("phone"):
+        firebase_sync.save_credential(u_dict["phone"], u_dict["id"], u_dict.get("password_hash") or "", req.name.strip(), u_dict.get("role") or "customer")
+    firebase_sync.sync_user(u_dict["id"])
+    if u_dict.get("role") == "worker":
+        firebase_sync.sync_worker_profile(u_dict["id"])
+    elif u_dict.get("role") == "contractor":
+        firebase_sync.sync_contractor_profile(u_dict["id"])
     return {"ok": True, "name": req.name, "avatar": req.avatar}
 
 class AvatarReq(BaseModel):
