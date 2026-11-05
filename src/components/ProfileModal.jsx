@@ -82,17 +82,17 @@ export default function ProfileModal({
       showToast("📍 लोकेशन ले रहे हैं...");
       const loc = await getLoc(true);
       if (role === 'worker') {
-        await api('/worker/status', 'POST', { lat: loc.lat, lng: loc.lng }, token);
+        await api('/worker/location', 'POST', { lat: loc.lat, lng: loc.lng }, token);
       } else if (role === 'contractor') {
-        await api('/contractor/profile', 'PUT', { lat: loc.lat, lng: loc.lng }, token);
+        await api('/contractor/location', 'POST', { lat: loc.lat, lng: loc.lng }, token);
       }
       const updatedProfile = { ...profile, lat: loc.lat, lng: loc.lng };
       onUpdateProfile(updatedProfile);
       if (role === 'worker') syncWorkerProfile(user.id, updatedProfile);
       if (role === 'contractor') syncContractorProfile(user.id, updatedProfile);
-      showToast(t('locok'));
+      showToast(t('locok') || "लोकेशन अपडेट हो गई!");
     } catch (err) {
-      showToast(err.message || "Location error");
+      showToast(err.message || "लोकेशन प्राप्त नहीं हो सकी");
     }
   };
 
@@ -115,18 +115,35 @@ export default function ProfileModal({
         syncUser(updatedUser);
       }
 
+      // Resolve coordinates safely
+      let curLat = profile?.lat;
+      let curLng = profile?.lng;
+      if (curLat == null || curLng == null) {
+        try {
+          const loc = await getLoc(false);
+          curLat = loc?.lat;
+          curLng = loc?.lng;
+        } catch (e) {}
+      }
+      if (curLat == null || curLng == null) {
+        curLat = 26.4505;
+        curLng = 80.1912;
+      }
+
       // Update role-specific profile
-      let updatedProfile = { ...profile };
+      let updatedProfile = { ...profile, lat: curLat, lng: curLng };
       if (role === 'worker') {
         const payload = {
           skills: selectedSkills,
           daily_rate: dailyRate ? parseInt(dailyRate, 10) : 0,
           experience_years: exp ? parseInt(exp, 10) : 0,
           village: village || '',
-          radius_km: radius ? parseInt(radius, 10) : 6
+          radius_km: radius ? parseInt(radius, 10) : 6,
+          lat: curLat,
+          lng: curLng
         };
         const r = await api('/worker/profile', 'PUT', payload, token);
-        updatedProfile = { ...updatedProfile, ...r.profile, skills: selectedSkills };
+        updatedProfile = { ...updatedProfile, ...r.profile, ...payload };
         onUpdateProfile(updatedProfile);
         syncWorkerProfile(user.id, updatedProfile);
       } else if (role === 'contractor') {
@@ -134,10 +151,15 @@ export default function ProfileModal({
           company: company || '',
           skills: selectedSkills,
           min_budget: minBudget ? parseInt(minBudget, 10) : 0,
-          about: about || ''
+          about: about || '',
+          experience_years: exp ? parseInt(exp, 10) : 0,
+          village: village || '',
+          radius_km: radius ? parseInt(radius, 10) : 25,
+          lat: curLat,
+          lng: curLng
         };
         const r = await api('/contractor/profile', 'PUT', payload, token);
-        updatedProfile = { ...updatedProfile, ...r.profile, skills: selectedSkills };
+        updatedProfile = { ...updatedProfile, ...r.profile, ...payload };
         onUpdateProfile(updatedProfile);
         syncContractorProfile(user.id, updatedProfile);
       } else if (role === 'customer') {
@@ -330,6 +352,23 @@ export default function ProfileModal({
                 />
               </>
             )}
+
+            <div style={{ marginTop: '14px', padding: '10px', background: '#f5f7f5', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: '12px', color: 'var(--mut)', display: 'block' }}>लोकेशन (GPS)</span>
+                <b style={{ fontSize: '13px', color: profile?.lat != null ? 'var(--g)' : 'var(--red)' }}>
+                  {profile?.lat != null ? `📍 ${Number(profile.lat).toFixed(3)}, ${Number(profile.lng).toFixed(3)}` : '❌ सेट नहीं'}
+                </b>
+              </div>
+              <button
+                type="button"
+                className="sec"
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+                onClick={handleUpdateLocation}
+              >
+                📍 GPS लें
+              </button>
+            </div>
 
             <div className="profile-actions" style={{ marginTop: '16px' }}>
               <button className="big" onClick={handleSaveProfile} disabled={isSaving}>

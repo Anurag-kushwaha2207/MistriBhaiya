@@ -27,23 +27,40 @@ class ContractorProfile(BaseModel):
     company: str = Field("", max_length=80)
     skills: List[str] = []
     village: str = Field("", max_length=80)
-    lat: float
-    lng: float
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     radius_km: float = 25
     min_budget: int = Field(0, ge=0)
     experience_years: int = Field(0, ge=0, le=60)
     about: str = Field("", max_length=300)
 
+class ContractorLocReq(BaseModel):
+    lat: float
+    lng: float
+
 @router.put("/api/contractor/profile")
 def contractor_profile(req: ContractorProfile, u=Depends(current_user)):
     contractor_only(u)
-    check_latlng(req.lat, req.lng)
-    skills = [s for s in req.skills if s in SKILLS]
     with db() as c:
+        cp = c.execute("SELECT * FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
+        new_lat = req.lat if req.lat is not None else (cp["lat"] if cp and cp["lat"] is not None else 26.4505)
+        new_lng = req.lng if req.lng is not None else (cp["lng"] if cp and cp["lng"] is not None else 80.1912)
+        check_latlng(new_lat, new_lng)
+        skills = [s for s in req.skills if s in SKILLS]
         c.execute("UPDATE contractor_profiles SET company=?,skills=?,village=?,lat=?,lng=?,radius_km=?,min_budget=?,experience_years=?,about=? WHERE user_id=?",
-                  (req.company, ",".join(skills), req.village, req.lat, req.lng, clamp_radius(req.radius_km), req.min_budget, req.experience_years, req.about, u["id"]))
+                  (req.company, ",".join(skills), req.village, new_lat, new_lng, clamp_radius(req.radius_km), req.min_budget, req.experience_years, req.about, u["id"]))
     firebase_sync.sync_contractor_profile(u["id"])
-    return {"ok": True}
+    return {"ok": True, "profile": {"lat": new_lat, "lng": new_lng}}
+
+@router.post("/api/contractor/location")
+@router.put("/api/contractor/location")
+def contractor_location(req: ContractorLocReq, u=Depends(current_user)):
+    contractor_only(u)
+    check_latlng(req.lat, req.lng)
+    with db() as c:
+        c.execute("UPDATE contractor_profiles SET lat=?,lng=? WHERE user_id=?", (req.lat, req.lng, u["id"]))
+    firebase_sync.sync_contractor_profile(u["id"])
+    return {"ok": True, "lat": req.lat, "lng": req.lng}
 
 @router.get("/api/contractors")
 @router.get("/api/contractors/search")

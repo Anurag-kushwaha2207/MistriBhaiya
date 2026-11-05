@@ -52,13 +52,19 @@ class ProfileUpdate(BaseModel):
     daily_rate: int = Field(0, ge=0, le=100000)
     experience_years: int = Field(0, ge=0, le=60)
     village: str = Field("", max_length=80)
-    lat: float
-    lng: float
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     radius_km: float = 6
 
 class StatusReq(BaseModel):
-    status: str = Field(pattern="^(free|busy|offline)$")
+    status: Optional[str] = Field(None, pattern="^(free|busy|offline)$")
     hours: Optional[float] = Field(None, gt=0, le=72)
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+class LocationReq(BaseModel):
+    lat: float
+    lng: float
 
 class JobReq(BaseModel):
     skill: str
@@ -218,34 +224,53 @@ def delete_avatar(u=Depends(current_user)):
 @app.put("/api/worker/profile")
 async def worker_profile(req: ProfileUpdate, u=Depends(current_user)):
     need_role(u, "worker")
-    check_latlng(req.lat, req.lng)
     skills = [s for s in req.skills if s in SKILLS]
     if not skills:
         raise HTTPException(400, "Choose at least one valid skill")
     with db() as c:
+        wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
+        new_lat = req.lat if req.lat is not None else (wp["lat"] if wp and wp["lat"] is not None else 26.4505)
+        new_lng = req.lng if req.lng is not None else (wp["lng"] if wp and wp["lng"] is not None else 80.1912)
+        check_latlng(new_lat, new_lng)
         c.execute("UPDATE worker_profiles SET skills=?,daily_rate=?,experience_years=?,village=?,lat=?,lng=?,radius_km=? WHERE user_id=?",
-                  (",".join(skills), req.daily_rate, req.experience_years, req.village.strip(), req.lat, req.lng,
+                  (",".join(skills), req.daily_rate, req.experience_years, req.village.strip(), new_lat, new_lng,
                    clamp_radius(req.radius_km), u["id"]))
         await push_worker_status(c, u["id"])
     firebase_sync.sync_worker_profile(u["id"])
-    return {"ok": True}
+    return {"ok": True, "profile": {"lat": new_lat, "lng": new_lng}}
+
+@app.post("/api/worker/location")
+@app.put("/api/worker/location")
+async def worker_location(req: LocationReq, u=Depends(current_user)):
+    need_role(u, "worker")
+    check_latlng(req.lat, req.lng)
+    with db() as c:
+        c.execute("UPDATE worker_profiles SET lat=?,lng=? WHERE user_id=?", (req.lat, req.lng, u["id"]))
+        await push_worker_status(c, u["id"])
+    firebase_sync.sync_worker_profile(u["id"])
+    return {"ok": True, "lat": req.lat, "lng": req.lng}
 
 @app.post("/api/worker/status")
 async def worker_status(req: StatusReq, u=Depends(current_user)):
     need_role(u, "worker")
     now = time.time()
     with db() as c:
+        if req.lat is not None and req.lng is not None:
+            check_latlng(req.lat, req.lng)
+            c.execute("UPDATE worker_profiles SET lat=?,lng=? WHERE user_id=?", (req.lat, req.lng, u["id"]))
         wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
-        if wp["lat"] is None:
-            raise HTTPException(400, "Set your profile and location first")
-        free_until = now + (req.hours or config.FREE_DEFAULT_HOURS) * 3600 if req.status == "free" else 0
-        c.execute("UPDATE worker_profiles SET status=?,free_until=?,status_updated=? WHERE user_id=?",
-                  (req.status, free_until, now, u["id"]))
-        await push_worker_status(c, u["id"])
-        st = effective_status(c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone(),
-                              busy_ranges(c, [u["id"]])[u["id"]], today(), now)
+        st = wp["status"] if wp else "offline"
+        if req.status:
+            if wp["lat"] is None:
+                raise HTTPException(400, "Set your profile and location first")
+            free_until = now + (req.hours or config.FREE_DEFAULT_HOURS) * 3600 if req.status == "free" else 0
+            c.execute("UPDATE worker_profiles SET status=?,free_until=?,status_updated=? WHERE user_id=?",
+                      (req.status, free_until, now, u["id"]))
+            await push_worker_status(c, u["id"])
+            st = effective_status(c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone(),
+                                  busy_ranges(c, [u["id"]])[u["id"]], today(), now)
     firebase_sync.sync_worker_profile(u["id"])
-    return {"ok": True, "status": st}
+    return {"ok": True, "status": st, "lat": wp["lat"] if wp else None, "lng": wp["lng"] if wp else None}
 
 @app.get("/api/worker/jobs")
 @app.get("/api/jobs")

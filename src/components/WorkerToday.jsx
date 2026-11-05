@@ -54,11 +54,11 @@ export default function WorkerToday({ user, profile, token, onUpdateProfile, sho
     try {
       showToast("📍 लोकेशन ले रहे हैं...");
       const loc = await getLoc(true);
-      const res = await api('/worker/status', 'POST', { lat: loc.lat, lng: loc.lng }, token);
-      const updatedProfile = { ...profile, ...res.profile };
+      await api('/worker/location', 'POST', { lat: loc.lat, lng: loc.lng }, token);
+      const updatedProfile = { ...profile, lat: loc.lat, lng: loc.lng };
       onUpdateProfile(updatedProfile);
       syncWorkerProfile(user.id, updatedProfile);
-      showToast(t('locok'));
+      showToast(t('locok') || "लोकेशन अपडेट हो गई!");
     } catch (err) {
       showToast(err.message || "Location error");
     }

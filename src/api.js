@@ -63,8 +63,24 @@ export function getLoc(force = false) {
         localStorage.setItem("ks_loc", JSON.stringify(loc));
         res(loc);
       },
-      () => rej(new Error("Could not get location. Please enable GPS.")),
-      { enableHighAccuracy: true, timeout: 15000 }
+      () => {
+        // Fallback without high accuracy if satellite lock timed out
+        navigator.geolocation.getCurrentPosition(
+          p2 => {
+            const loc = { lat: p2.coords.latitude, lng: p2.coords.longitude };
+            localStorage.setItem("ks_loc", JSON.stringify(loc));
+            res(loc);
+          },
+          () => {
+            if (cached) {
+              try { return res(JSON.parse(cached)); } catch (e) {}
+            }
+            rej(new Error("कृपया GPS / लोकेशन ऑन करें और अनुमति दें"));
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   });
 }
