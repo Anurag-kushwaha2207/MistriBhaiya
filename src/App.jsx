@@ -21,7 +21,9 @@ import ContractorProjects from './components/ContractorProjects';
 import ContractorLedger from './components/ContractorLedger';
 import AssistantView from './components/AssistantView';
 import CallModal from './components/CallModal';
+import ChatModal from './components/ChatModal';
 import { BookingModal, ProjectModal, CounterModal, OfferModal } from './components/Modals';
+import { playRingChime, playMessageChime } from './sounds';
 
 export default function App() {
   const [lang, setLang] = useState(() => localStorage.getItem('ks_lang') || 'hi');
@@ -45,6 +47,7 @@ export default function App() {
   const [projectContractor, setProjectContractor] = useState(null);
   const [counterData, setCounterData] = useState(null);
   const [instantOffer, setInstantOffer] = useState(null);
+  const [activeChatBooking, setActiveChatBooking] = useState(null);
 
   // Cold start / loading status
   const [isWakingUp, setIsWakingUp] = useState(false);
@@ -152,27 +155,40 @@ export default function App() {
         try {
           const m = JSON.parse(ev.data);
           if (m.type === 'job_new') {
-            showToast('📢 नया काम मिला!');
+            playRingChime();
+            showToast('📢 नया काम पोस्ट हुआ!');
             setRefreshTrigger(c => c + 1);
           } else if (m.type === 'job_interest') {
+            playRingChime();
             showToast('👷 ' + (m.worker || 'मिस्त्री') + ' ने काम में दिलचस्पी दिखाई!');
             setRefreshTrigger(c => c + 1);
           } else if (m.type === 'booking_new') {
-            showToast(t('newbook'));
+            playRingChime();
+            showToast('🔔 ' + (m.customer || 'ग्राहक') + ' ने नई बुकिंग भेजी है!');
             setRefreshTrigger(c => c + 1);
           } else if (m.type === 'booking_update') {
-            showToast(t('upd') + ': ' + (m.status === 'countered' ? t('counterRecv') + ' ₹' + m.rate : t('st_' + m.status)));
+            playRingChime();
+            showToast('🔔 ' + (m.status === 'countered' ? 'नया रेट आया: ₹' + m.rate : 'बुकिंग अपडेट: ' + m.status));
             setRefreshTrigger(c => c + 1);
           } else if (m.type === 'crew_invite') {
+            playRingChime();
             showToast('👥 ' + t('crewInvite') + ': ' + (m.contractor || ''));
             setRefreshTrigger(c => c + 1);
           } else if (m.type === 'project_new') {
+            playRingChime();
             showToast('🏗️ ' + t('newProject') + ': ' + (m.title || ''));
             setRefreshTrigger(c => c + 1);
           } else if (m.type === 'instant_offer') {
+            playRingChime();
             setInstantOffer(m);
           } else if (m.type === 'instant_closed') {
             setInstantOffer(null);
+          } else if (m.type === 'chat') {
+            window.dispatchEvent(new CustomEvent('mistri_chat_message', { detail: m }));
+            playMessageChime(false);
+            if (!activeChatBooking || String(activeChatBooking.id) !== String(m.ref_id)) {
+              showToast('💬 ' + (m.from || 'साथी') + ': ' + m.text);
+            }
           } else if (m.type === 'rtc') {
             if (m.data?.kind === 'offer') {
               setIncomingCall({
@@ -374,6 +390,7 @@ export default function App() {
                 refreshTrigger={refreshTrigger}
                 onOpenCounter={(kind, id, onDone) => setCounterData({ kind, id, onDone })}
                 onStartCall={(target) => setCallTarget(target)}
+                onOpenChat={(b) => setActiveChatBooking(b)}
                 showToast={showToast}
                 t={t}
               />
@@ -467,6 +484,19 @@ export default function App() {
           token={token}
           onClose={() => setInstantOffer(null)}
           onAccept={() => setTab('bookings')}
+          showToast={showToast}
+          t={t}
+        />
+      )}
+
+      {/* WhatsApp Style In-App Chat Modal */}
+      {activeChatBooking && (
+        <ChatModal
+          booking={activeChatBooking}
+          token={token}
+          user={user}
+          onClose={() => setActiveChatBooking(null)}
+          onStartCall={(target) => setCallTarget(target)}
           showToast={showToast}
           t={t}
         />

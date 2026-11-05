@@ -619,14 +619,40 @@ def my_bookings(u=Depends(current_user)):
     with db() as c:
         rows = c.execute(f"SELECT * FROM bookings WHERE {col}=? ORDER BY created_at DESC LIMIT 100", (u["id"],)).fetchall()
         ids = {x for r in rows for x in (r["worker_id"], r["customer_id"])}
-        names = {}
+        users_map = {}
         if ids:
             q = ",".join("?" * len(ids))
-            names = {r["id"]: r["name"] for r in c.execute(f"SELECT id,name FROM users WHERE id IN ({q})", list(ids))}
-    out = [booking_view(r, names) for r in rows]
-    for b in out:
+            users_map = {r["id"]: dict(r) for r in c.execute(f"SELECT id,name,phone,avatar FROM users WHERE id IN ({q})", list(ids))}
+    out = []
+    for r in rows:
+        b = dict(r)
+        w_user = users_map.get(b["worker_id"], {})
+        c_user = users_map.get(b["customer_id"], {})
+        b["worker_name"] = w_user.get("name") or "मिस्त्री"
+        b["worker_phone"] = w_user.get("phone") or ""
+        b["worker_avatar"] = w_user.get("avatar") or ""
+        b["customer_name"] = c_user.get("name") or "ग्राहक"
+        b["customer_phone"] = c_user.get("phone") or ""
+        b["customer_avatar"] = c_user.get("avatar") or ""
+
+        # Map 'other' for ease of calling/chatting
+        if u["role"] == "worker":
+            b["other_name"] = b["customer_name"]
+            b["other_phone"] = b["customer_phone"]
+            b["other_avatar"] = b["customer_avatar"]
+            b["other_id"] = b["customer_id"]
+        else:
+            b["other_name"] = b["worker_name"]
+            b["other_phone"] = b["worker_phone"]
+            b["other_avatar"] = b["worker_avatar"]
+            b["other_id"] = b["worker_id"]
+
+        # Ensure both agreed_rate and daily_rate are present
+        b["daily_rate"] = b["agreed_rate"] or 0
+
         if u["role"] == "worker" or b["status"] != "accepted" or b.get("started_at"):
-            b["start_otp"] = ""        # only the customer sees the OTP, and only until the work has started
+            b["start_otp"] = ""
+        out.append(b)
     return {"bookings": out}
 
 @app.post("/api/bookings/{bid}/respond")
