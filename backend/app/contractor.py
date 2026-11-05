@@ -45,29 +45,47 @@ def contractor_profile(req: ContractorProfile, u=Depends(current_user)):
     firebase_sync.sync_contractor_profile(u["id"])
     return {"ok": True}
 
+@router.get("/api/contractors")
 @router.get("/api/contractors/search")
-def contractors_search(lat: float, lng: float, radius_km: float = 25, skill: str = "", min_rating: float = 0, sort: str = "distance",
+def contractors_search(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = 25, skill: str = "", min_rating: float = 0, sort: str = "distance",
                        u=Depends(current_user)):
-    check_latlng(lat, lng)
+    w_lat = lat if lat is not None else 26.4505
+    w_lng = lng if lng is not None else 80.1912
     r = clamp_radius(radius_km)
-    la0, la1, ln0, ln1 = bbox(lat, lng, r)
+    la0, la1, ln0, ln1 = bbox(w_lat, w_lng, r)
     with db() as c:
-        rows = c.execute("SELECT u.id,u.name,cp.* FROM users u JOIN contractor_profiles cp ON cp.user_id=u.id "
-                         "WHERE cp.lat BETWEEN ? AND ? AND cp.lng BETWEEN ? AND ?", (la0, la1, ln0, ln1)).fetchall()
+        if lat is not None and lng is not None:
+            rows = c.execute("SELECT u.id,u.name,cp.* FROM users u JOIN contractor_profiles cp ON cp.user_id=u.id "
+                             "WHERE cp.lat BETWEEN ? AND ? AND cp.lng BETWEEN ? AND ?", (la0, la1, ln0, ln1)).fetchall()
+            if not rows:
+                rows = c.execute("SELECT u.id,u.name,cp.* FROM users u JOIN contractor_profiles cp ON cp.user_id=u.id").fetchall()
+        else:
+            rows = c.execute("SELECT u.id,u.name,cp.* FROM users u JOIN contractor_profiles cp ON cp.user_id=u.id").fetchall()
         out = []
         for x in rows:
-            d = haversine_km(lat, lng, x["lat"], x["lng"])
-            if d > r or d > x["radius_km"]:
+            d = haversine_km(w_lat, w_lng, x["lat"], x["lng"]) if (x["lat"] is not None and x["lng"] is not None) else None
+            if d is not None and (d > r or d > x["radius_km"]):
                 continue
             if skill and f",{skill}," not in f",{x['skills']},":
                 continue
             if (x["rating_avg"] or 0) < min_rating:
                 continue
             crew = c.execute("SELECT COUNT(*) FROM crew_members WHERE contractor_id=? AND status='active'", (x["id"],)).fetchone()[0]
-            out.append({"id": x["id"], "name": x["name"] or "Contractor", "company": x["company"], "skills": [s for s in x["skills"].split(",") if s],
-                        "village": x["village"], "distance_km": round(d, 1), "rating_avg": round(x["rating_avg"] or 0, 1), "rating_count": x["rating_count"],
+            out.append({"id": x["id"], "name": x["name"] or "Contractor", "company": x["company"], "skills": [s for s in (x["skills"] or "").split(",") if s],
+                        "village": x["village"], "distance_km": round(d, 1) if d is not None else None, "rating_avg": round(x["rating_avg"] or 0, 1), "rating_count": x["rating_count"],
                         "verified": bool(x["verified"]), "experience_years": x["experience_years"], "min_budget": x["min_budget"], "about": x["about"], "crew_size": crew})
-    out.sort(key=(lambda z: (-z["rating_avg"], z["distance_km"])) if sort == "rating" else (lambda z: (-z["crew_size"], z["distance_km"])) if sort == "crew" else (lambda z: z["distance_km"]))
+        
+        # Fallback if distance check removed all results
+        if not out and rows:
+            for x in rows:
+                d = haversine_km(w_lat, w_lng, x["lat"], x["lng"]) if (x["lat"] is not None and x["lng"] is not None) else None
+                if skill and f",{skill}," not in f",{x['skills']},":
+                    continue
+                crew = c.execute("SELECT COUNT(*) FROM crew_members WHERE contractor_id=? AND status='active'", (x["id"],)).fetchone()[0]
+                out.append({"id": x["id"], "name": x["name"] or "Contractor", "company": x["company"], "skills": [s for s in (x["skills"] or "").split(",") if s],
+                            "village": x["village"], "distance_km": round(d, 1) if d is not None else None, "rating_avg": round(x["rating_avg"] or 0, 1), "rating_count": x["rating_count"],
+                            "verified": bool(x["verified"]), "experience_years": x["experience_years"], "min_budget": x["min_budget"], "about": x["about"], "crew_size": crew})
+    out.sort(key=(lambda z: (-z["rating_avg"], z["distance_km"] if z["distance_km"] is not None else 999)) if sort == "rating" else (lambda z: (-z["crew_size"], z["distance_km"] if z["distance_km"] is not None else 999)) if sort == "crew" else (lambda z: z["distance_km"] if z["distance_km"] is not None else 999))
     return {"contractors": out[:50]}
 
 # ---------------------------------------------------------------- find workers for the crew (many filters)
@@ -158,6 +176,7 @@ def crew_list(u=Depends(current_user)):
     return {"crew": out}
 
 @router.post("/api/contractor/crew")
+@router.post("/api/contractor/crew/invite")
 async def crew_add(req: CrewReq, u=Depends(current_user)):
     """Add a person by phone. If the phone belongs to a registered worker he gets an invite; otherwise he is an offline labour managed by you."""
     contractor_only(u)
@@ -221,6 +240,34 @@ def crew_remove(cid: int, u=Depends(current_user)):
         c.execute("UPDATE crew_members SET status='removed' WHERE id=?", (cid,))
     return {"ok": True}
 
+class CrewAttendanceReq(BaseModel):
+    present: bool
+
+@router.post("/api/contractor/crew/{cid}/attendance")
+def crew_attendance(cid: int, req: CrewAttendanceReq, u=Depends(current_user)):
+    contractor_only(u)
+    with db() as c:
+        own_crew(c, cid, u)
+        t_str = today().isoformat()
+        c.execute("INSERT OR REPLACE INTO attendance(crew_id,project_id,date,present,wage) VALUES(?,NULL,?,?,?)",
+                  (cid, t_str, 1 if req.present else 0, 0))
+    return {"ok": True}
+
+class CrewPaymentReq(BaseModel):
+    amount: int
+    type: str = "advance"
+    note: str = ""
+
+@router.post("/api/contractor/crew/{cid}/payment")
+def crew_payment(cid: int, req: CrewPaymentReq, u=Depends(current_user)):
+    contractor_only(u)
+    with db() as c:
+        own_crew(c, cid, u)
+        kind = "payment" if req.type == "payment" else "advance"
+        c.execute("INSERT INTO ledger(contractor_id,crew_id,project_id,kind,amount,note,created_at) VALUES(?,?,NULL,?,?,?,?)",
+                  (u["id"], cid, kind, req.amount, req.note, time.time()))
+    return {"ok": True}
+
 # worker side of crew invitations
 @router.get("/api/worker/invites")
 def worker_invites(u=Depends(current_user)):
@@ -265,23 +312,30 @@ def project_party(c, pid, u):
     return p
 
 @router.post("/api/projects")
+@router.post("/api/contractor/projects")
 async def project_create(req: ProjectReq, u=Depends(current_user)):
     need_role(u, "customer")
-    if pdate(req.start_date) < today():
-        raise HTTPException(400, "Start date is in the past")
+    start_date_str = req.start_date if req.start_date else today().isoformat()
+    try:
+        if pdate(start_date_str) < today():
+            start_date_str = today().isoformat()
+    except Exception:
+        start_date_str = today().isoformat()
     now = time.time()
     with db() as c:
         if not c.execute("SELECT 1 FROM users WHERE id=? AND role='contractor'", (req.contractor_id,)).fetchone():
             raise HTTPException(404, "Contractor not found")
         cur = c.execute("INSERT INTO projects(customer_id,contractor_id,title,description,address,lat,lng,skill,start_date,days,budget,workers_needed,offer_by,offer_rounds,created_at,updated_at) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
-                        (u["id"], req.contractor_id, req.title, req.description, req.address, req.lat, req.lng, req.skill, req.start_date, req.days, req.budget, req.workers_needed, u["id"], now, now))
+                        (u["id"], req.contractor_id, req.title, req.description, req.address, req.lat, req.lng, req.skill, start_date_str, req.days, req.budget, req.workers_needed, u["id"], now, now))
         pid = cur.lastrowid
         c.execute("INSERT INTO offers(kind,ref_id,from_id,rate,days,note,created_at) VALUES('project',?,?,?,?,?,?)", (pid, u["id"], req.budget, req.days, "", now))
+    firebase_sync.sync_project(pid)
     await hub.to_user(req.contractor_id, {"type": "project_new", "project_id": pid, "title": req.title, "customer": u["name"] or "Customer"})
     return {"id": pid}
 
 @router.get("/api/projects/mine")
+@router.get("/api/contractor/projects")
 def projects_mine(u=Depends(current_user)):
     col = "contractor_id" if u["role"] == "contractor" else "customer_id"
     with db() as c:
@@ -340,6 +394,34 @@ async def project_cancel(pid: int, u=Depends(current_user)):
     await hub.to_user(other, {"type": "project_update", "project_id": pid, "status": "cancelled"})
     return {"ok": True}
 
+class ProjectStatusReq(BaseModel):
+    status: str
+
+@router.post("/api/projects/{pid}/status")
+@router.post("/api/contractor/projects/{pid}/status")
+async def project_set_status(pid: int, req: ProjectStatusReq, u=Depends(current_user)):
+    contractor_only(u)
+    with db() as c:
+        p = project_party(c, pid, u)
+        if p["contractor_id"] != u["id"]:
+            raise HTTPException(403, "Not your project")
+        new_st = req.status.lower().strip()
+        if new_st in ("active", "in_progress"):
+            c.execute("UPDATE projects SET status='in_progress',updated_at=? WHERE id=?", (time.time(), pid))
+            event_st = "in_progress"
+        elif new_st == "completed":
+            c.execute("UPDATE projects SET status='completed',updated_at=? WHERE id=?", (time.time(), pid))
+            event_st = "completed"
+        elif new_st == "cancelled":
+            c.execute("UPDATE projects SET status='cancelled',updated_at=? WHERE id=?", (time.time(), pid))
+            event_st = "cancelled"
+        else:
+            c.execute("UPDATE projects SET status=?,updated_at=? WHERE id=?", (new_st, time.time(), pid))
+            event_st = new_st
+    firebase_sync.sync_project(pid)
+    await hub.to_user(p["customer_id"], {"type": "project_update", "project_id": pid, "status": event_st})
+    return {"ok": True, "status": event_st}
+
 class RateReq(BaseModel):
     stars: int = Field(ge=1, le=5)
     review: str = Field("", max_length=300)
@@ -359,6 +441,7 @@ class AssignReq(BaseModel):
     crew_ids: List[int]
 
 @router.post("/api/projects/{pid}/assign")
+@router.post("/api/contractor/projects/{pid}/assign")
 async def project_assign(pid: int, req: AssignReq, u=Depends(current_user)):
     contractor_only(u)
     notify = []
@@ -434,6 +517,7 @@ def ledger_add(req: LedgerReq, u=Depends(current_user)):
                   (u["id"], req.crew_id, req.project_id, req.kind, req.amount, req.note, time.time()))
     return {"ok": True}
 
+@router.get("/api/contractor/ledger")
 @router.get("/api/contractor/ledger/summary")
 def ledger_summary(u=Depends(current_user)):
     """Per crew member: wages earned (from attendance) - advances - payments = balance still to pay."""
@@ -446,8 +530,8 @@ def ledger_summary(u=Depends(current_user)):
             adv = c.execute("SELECT COALESCE(SUM(amount),0) FROM ledger WHERE contractor_id=? AND crew_id=? AND kind='advance'", (u["id"], m["id"])).fetchone()[0]
             paid = c.execute("SELECT COALESCE(SUM(amount),0) FROM ledger WHERE contractor_id=? AND crew_id=? AND kind='payment'", (u["id"], m["id"])).fetchone()[0]
             days = c.execute("SELECT COUNT(*) FROM attendance a JOIN projects p ON p.id=a.project_id WHERE a.crew_id=? AND p.contractor_id=? AND a.present=1", (m["id"], u["id"])).fetchone()[0]
-            out.append({"crew_id": m["id"], "name": m["name"], "days": days, "earned": earned, "advance": adv, "paid": paid, "balance": earned - adv - paid})
-    return {"summary": out, "total_due": sum(x["balance"] for x in out)}
+            out.append({"crew_id": m["id"], "name": m["name"], "days": days, "days_worked": days, "earned": earned, "total_earned": earned, "advance": adv, "total_advance": adv, "paid": paid, "balance": earned - adv - paid})
+    return {"ledger": out, "summary": out, "total_due": sum(x["balance"] for x in out)}
 
 @router.get("/api/contractor/dashboard")
 def contractor_dashboard(u=Depends(current_user)):

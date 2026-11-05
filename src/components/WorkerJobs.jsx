@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, getLoc } from '../api';
 
-export default function WorkerJobs({ token, meta, lang, refreshTrigger, showToast, t }) {
+export default function WorkerJobs({ token, meta, lang, refreshTrigger, onStartCall, showToast, t }) {
   const [radius, setRadius] = useState(25);
+  const [allAreas, setAllAreas] = useState(false);
   const [filterSkill, setFilterSkill] = useState('');
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -18,6 +19,9 @@ export default function WorkerJobs({ token, meta, lang, refreshTrigger, showToas
         radius_km: radius,
         all_skills: 'true'
       });
+      if (allAreas) {
+        q.set('all_areas', 'true');
+      }
       if (loc) {
         q.set('lat', loc.lat);
         q.set('lng', loc.lng);
@@ -33,7 +37,7 @@ export default function WorkerJobs({ token, meta, lang, refreshTrigger, showToas
     } finally {
       setLoading(false);
     }
-  }, [radius, filterSkill, token, showToast]);
+  }, [radius, allAreas, filterSkill, token, showToast]);
 
   useEffect(() => {
     loadJobs();
@@ -83,14 +87,27 @@ export default function WorkerJobs({ token, meta, lang, refreshTrigger, showToas
             </select>
           </div>
           <div>
-            <label>{t('dist')}: <b>{radius}</b> {t('km')}</label>
-            <input
-              type="range"
-              min="1"
-              max="50"
-              value={radius}
-              onChange={(e) => setRadius(e.target.value)}
-            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label>{t('dist')}: <b>{allAreas ? 'पूरा शहर / सभी जगह' : `${radius} ${t('km')}`}</b></label>
+              <label style={{ fontSize: '13px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="checkbox"
+                  checked={allAreas}
+                  onChange={(e) => setAllAreas(e.target.checked)}
+                  style={{ width: 'auto' }}
+                />
+                सभी क्षेत्र
+              </label>
+            </div>
+            {!allAreas && (
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={radius}
+                onChange={(e) => setRadius(e.target.value)}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -150,11 +167,25 @@ export default function WorkerJobs({ token, meta, lang, refreshTrigger, showToas
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', gap: '8px' }}>
             {job.customer_phone ? (
-              <a href={`tel:${job.customer_phone}`} style={{ textDecoration: 'none', flex: 1 }}>
-                <button type="button" className="sec" style={{ width: '100%', padding: '10px' }}>
-                  📞 {t('call')}
-                </button>
-              </a>
+              <button
+                type="button"
+                className="sec"
+                style={{ flex: 1, padding: '10px' }}
+                onClick={() => {
+                  if (onStartCall) {
+                    onStartCall({
+                      name: job.customer_name || 'ग्राहक',
+                      phone: job.customer_phone,
+                      customer_id: job.customer_id,
+                      booking_id: null
+                    });
+                  } else {
+                    window.location.href = `tel:${job.customer_phone}`;
+                  }
+                }}
+              >
+                📞 {t('call')}
+              </button>
             ) : (
               <span />
             )}

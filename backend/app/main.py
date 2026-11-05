@@ -86,8 +86,13 @@ class RespondReq(BaseModel):
     accept: bool
 
 class RateReq(BaseModel):
-    stars: int = Field(ge=1, le=5)
+    stars: Optional[int] = Field(None, ge=1, le=5)
+    rating: Optional[int] = Field(None, ge=1, le=5)
     review: str = Field("", max_length=300)
+
+    @property
+    def star_count(self) -> int:
+        return self.stars if self.stars is not None else (self.rating if self.rating is not None else 5)
 
 class CallReq(BaseModel):
     worker_id: Optional[int] = None
@@ -175,6 +180,7 @@ def me(u=Depends(current_user)):
     return out
 
 @app.put("/api/me")
+@app.put("/api/profile")
 def update_me(req: MeUpdate, u=Depends(current_user)):
     with db() as c:
         if req.name is not None:
@@ -188,6 +194,24 @@ def update_me(req: MeUpdate, u=Depends(current_user)):
         firebase_sync.sync_worker_profile(u["id"])
     elif u["role"] == "contractor":
         firebase_sync.sync_contractor_profile(u["id"])
+    return {"ok": True, "name": req.name, "avatar": req.avatar}
+
+class AvatarReq(BaseModel):
+    avatar: Optional[str] = None
+
+@app.post("/api/profile/avatar")
+@app.put("/api/profile/avatar")
+def update_avatar(req: AvatarReq, u=Depends(current_user)):
+    with db() as c:
+        c.execute("UPDATE users SET avatar=? WHERE id=?", (req.avatar or "", u["id"]))
+    firebase_sync.sync_user(u["id"])
+    return {"ok": True, "avatar": req.avatar}
+
+@app.delete("/api/profile/avatar")
+def delete_avatar(u=Depends(current_user)):
+    with db() as c:
+        c.execute("UPDATE users SET avatar=NULL WHERE id=?", (u["id"],))
+    firebase_sync.sync_user(u["id"])
     return {"ok": True}
 
 # ---------------------------------------------------------------- worker side
@@ -226,7 +250,7 @@ async def worker_status(req: StatusReq, u=Depends(current_user)):
 @app.get("/api/worker/jobs")
 @app.get("/api/jobs")
 def nearby_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, lng: Optional[float] = None,
-                skill: Optional[str] = None, all_skills: bool = False, u=Depends(current_user)):
+                skill: Optional[str] = None, all_skills: bool = False, all_areas: bool = False, u=Depends(current_user)):
     """Open jobs around the worker, inside the worker's radius, matching skills."""
     with db() as c:
         wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone() if u["role"] == "worker" else None
@@ -234,20 +258,26 @@ def nearby_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, 
         w_lng = lng if lng is not None else (wp["lng"] if wp else None)
         r = clamp_radius(radius_km if radius_km else (wp["radius_km"] if wp and wp["radius_km"] else config.DEFAULT_RADIUS_KM))
         
-        if w_lat is not None and w_lng is not None:
+        nearby_rows = []
+        if w_lat is not None and w_lng is not None and not all_areas and (radius_km is None or radius_km < 90):
             la0, la1, ln0, ln1 = bbox(w_lat, w_lng, r)
-            rows = c.execute("SELECT j.*,u.name AS customer_name,u.phone AS customer_phone FROM jobs j JOIN users u ON u.id=j.customer_id "
+            nearby_rows = c.execute("SELECT j.*,u.name AS customer_name,u.phone AS customer_phone FROM jobs j JOIN users u ON u.id=j.customer_id "
                              "WHERE j.status='open' AND j.lat BETWEEN ? AND ? AND j.lng BETWEEN ? AND ? "
                              "ORDER BY j.created_at DESC LIMIT 200", (la0, la1, ln0, ln1)).fetchall()
-        else:
+        
+        if not nearby_rows:
             rows = c.execute("SELECT j.*,u.name AS customer_name,u.phone AS customer_phone FROM jobs j JOIN users u ON u.id=j.customer_id "
                              "WHERE j.status='open' ORDER BY j.created_at DESC LIMIT 200").fetchall()
+            using_fallback = True
+        else:
+            rows = nearby_rows
+            using_fallback = False
 
     out = []
     worker_skills = {s.strip() for s in ((wp["skills"] if wp else "") or "").split(",") if s.strip()}
     for j in rows:
         d = haversine_km(w_lat, w_lng, j["lat"], j["lng"]) if (w_lat is not None and w_lng is not None and j["lat"] is not None and j["lng"] is not None) else None
-        if d is not None and d > r:
+        if not using_fallback and d is not None and d > r:
             continue
         if skill and j["skill"] != skill:
             continue
@@ -263,42 +293,68 @@ def nearby_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, 
     return {"jobs": out, "radius_km": r}
 
 # ---------------------------------------------------------------- customer side
+@app.get("/api/workers")
 @app.get("/api/workers/search")
-def search_workers(lat: float, lng: float, radius_km: float = config.DEFAULT_RADIUS_KM, skill: str = "",
+def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = config.DEFAULT_RADIUS_KM, skill: str = "",
                    free_only: bool = False, on_date: str = "", sort: str = "smart", limit: int = Query(50, le=200),
                    respect_worker_radius: bool = True, u=Depends(current_user)):
-    check_latlng(lat, lng)
+    w_lat = lat if lat is not None else 26.4505
+    w_lng = lng if lng is not None else 80.1912
     r = clamp_radius(radius_km)
     d0 = pdate(on_date) if on_date else today()
     now = time.time()
-    la0, la1, ln0, ln1 = bbox(lat, lng, r)
-    sql = ("SELECT u.id,u.name,wp.* FROM users u JOIN worker_profiles wp ON wp.user_id=u.id "
+    la0, la1, ln0, ln1 = bbox(w_lat, w_lng, r)
+    sql = ("SELECT u.id,u.name,u.phone,wp.* FROM users u JOIN worker_profiles wp ON wp.user_id=u.id "
            "WHERE wp.lat BETWEEN ? AND ? AND wp.lng BETWEEN ? AND ? AND wp.skills!=''")
     args = [la0, la1, ln0, ln1]
     if skill:
         sql += " AND (',' || wp.skills || ',') LIKE ?"
         args.append(f"%,{skill},%")
+    base_sql = "SELECT u.id,u.name,u.phone,wp.* FROM users u JOIN worker_profiles wp ON wp.user_id=u.id WHERE wp.skills!=''"
+    base_args = []
+    if skill:
+        base_sql += " AND (',' || wp.skills || ',') LIKE ?"
+        base_args.append(f"%,{skill},%")
+
     with db() as c:
-        rows = c.execute(sql, args).fetchall()
+        if lat is not None and lng is not None:
+            rows = c.execute(sql, args).fetchall()
+            if not rows:
+                rows = c.execute(base_sql, base_args).fetchall()
+        else:
+            rows = c.execute(base_sql, base_args).fetchall()
         ranges = busy_ranges(c, [x["id"] for x in rows])
     out = []
     for w in rows:
-        d = haversine_km(lat, lng, w["lat"], w["lng"])
-        if d > r or (respect_worker_radius and d > w["radius_km"]):
+        d = haversine_km(w_lat, w_lng, w["lat"], w["lng"]) if (w["lat"] is not None and w["lng"] is not None) else None
+        if d is not None and (d > r or (respect_worker_radius and d > w["radius_km"])):
             continue
         st = effective_status(w, ranges[w["id"]], d0, now)
         if free_only and st != "free":
             continue
-        out.append(worker_public(w, w, st, d))
+        pub = worker_public(w, w, st, d)
+        pub["phone"] = w["phone"] if "phone" in w.keys() else ""
+        out.append(pub)
+
+    # Graceful fallback: if no workers within strict radius, return all matching workers
+    if not out and rows:
+        for w in rows:
+            st = effective_status(w, ranges[w["id"]], d0, now)
+            if free_only and st != "free":
+                continue
+            d = haversine_km(w_lat, w_lng, w["lat"], w["lng"]) if (w["lat"] is not None and w["lng"] is not None) else None
+            pub = worker_public(w, w, st, d)
+            pub["phone"] = w["phone"] if "phone" in w.keys() else ""
+            out.append(pub)
     order = {"free": 0, "busy": 1, "offline": 2}
     if sort == "rating":
-        out.sort(key=lambda x: (-x["rating_avg"], x["distance_km"]))
+        out.sort(key=lambda x: (-x["rating_avg"], x["distance_km"] if x.get("distance_km") is not None else 999))
     elif sort == "rate":
-        out.sort(key=lambda x: (x["daily_rate"] or 10**9, x["distance_km"]))
+        out.sort(key=lambda x: (x["daily_rate"] or 10**9, x["distance_km"] if x.get("distance_km") is not None else 999))
     elif sort == "distance":
-        out.sort(key=lambda x: x["distance_km"])
+        out.sort(key=lambda x: (x["distance_km"] if x.get("distance_km") is not None else 999))
     else:  # smart: free first, then nearest
-        out.sort(key=lambda x: (order[x["status"]], x["distance_km"]))
+        out.sort(key=lambda x: (order[x["status"]], x["distance_km"] if x.get("distance_km") is not None else 999))
     return {"workers": out[:limit], "radius_km": r, "count": len(out)}
 
 @app.post("/api/jobs")
@@ -529,13 +585,14 @@ async def update_booking_status(bid: int, req: BookingStatusReq, u=Depends(curre
 @app.post("/api/bookings/{bid}/rate")
 def rate(bid: int, req: RateReq, u=Depends(current_user)):
     need_role(u, "customer")
+    star_val = req.star_count
     with db() as c:
         b = get_booking(c, bid, u)
         if b["customer_id"] != u["id"] or b["status"] != "completed" or b["rating"]:
             raise HTTPException(400, "Cannot rate this booking")
-        c.execute("UPDATE bookings SET rating=?,review=? WHERE id=?", (req.stars, req.review, bid))
+        c.execute("UPDATE bookings SET rating=?,review=? WHERE id=?", (star_val, req.review, bid))
         c.execute("UPDATE worker_profiles SET rating_avg=(rating_avg*rating_count+?)/(rating_count+1), rating_count=rating_count+1 WHERE user_id=?",
-                  (req.stars, b["worker_id"]))
+                  (star_val, b["worker_id"]))
     firebase_sync.sync_booking(bid)
     firebase_sync.sync_worker_profile(b["worker_id"])
     return {"ok": True}
@@ -854,19 +911,40 @@ def admin_verify(wid: int, u=Depends(current_user)):
 
 # ---------------------------------------------------------------- realtime
 async def relay_rtc(ws, uid, msg):
-    """In-app voice call signalling (WebRTC). Only the two people of an active booking can signal each other."""
-    bid, data = msg.get("booking_id"), msg.get("data") or {}
+    """In-app voice call signalling (WebRTC). Allows calling via booking_id or target_user_id."""
+    bid = msg.get("booking_id")
+    target_uid = msg.get("target_user_id")
+    data = msg.get("data") or {}
+    other = None
     with db() as c:
-        b = c.execute("SELECT * FROM bookings WHERE id=?", (bid,)).fetchone()
-        if not b or uid not in (b["worker_id"], b["customer_id"]) or b["status"] not in ("requested", "accepted"):
+        if bid:
+            b = c.execute("SELECT * FROM bookings WHERE id=?", (bid,)).fetchone()
+            if b and uid in (b["worker_id"], b["customer_id"]):
+                other = b["worker_id"] if uid == b["customer_id"] else b["customer_id"]
+        elif target_uid:
+            u = c.execute("SELECT id FROM users WHERE id=?", (target_uid,)).fetchone()
+            if u:
+                other = u["id"]
+        if not other:
             return
-        other = b["worker_id"] if uid == b["customer_id"] else b["customer_id"]
         if data.get("kind") == "offer":
             c.execute("INSERT INTO call_logs(caller_id,callee_id,booking_id,provider,status,created_at) VALUES(?,?,?,?,?,?)",
                       (uid, other, bid, "webrtc", "initiated", time.time()))
-    sent = await hub.to_user(other, {"type": "rtc", "booking_id": bid, "from": uid, "data": data})
+    caller_user = None
+    with db() as c:
+        row = c.execute("SELECT name, phone FROM users WHERE id=?", (uid,)).fetchone()
+        if row:
+            caller_user = {"name": row["name"] or "Caller", "id": uid}
+    sent = await hub.to_user(other, {
+        "type": "rtc",
+        "booking_id": bid,
+        "from": uid,
+        "caller": caller_user,
+        "target_user_id": other,
+        "data": data
+    })
     if sent == 0 and data.get("kind") == "offer":
-        await ws.send_json({"type": "rtc_unavailable", "booking_id": bid})   # client falls back to a masked phone call
+        await ws.send_json({"type": "rtc_unavailable", "booking_id": bid, "target_user_id": other})
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket, token: str = ""):

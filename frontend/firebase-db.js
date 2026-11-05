@@ -99,3 +99,81 @@ async function fbSyncContractorProfile(userId, profile) {
   }
 }
 
+// Client-side direct sync for jobs
+async function fbSyncJob(job) {
+  if (!fbDb || !job || !job.id) return;
+  try {
+    const payload = {
+      id: Number(job.id),
+      customer_id: Number(job.customer_id) || null,
+      skill: job.skill || "",
+      description: job.description || "",
+      budget: Number(job.budget) || 0,
+      days: Number(job.days) || 1,
+      start_date: job.start_date || "",
+      address: job.address || "",
+      lat: job.lat != null ? Number(job.lat) : null,
+      lng: job.lng != null ? Number(job.lng) : null,
+      status: job.status || "open",
+      updated_at: Date.now() / 1000
+    };
+    await fbDb.collection("jobs").doc(String(job.id)).set(payload, { merge: true });
+    console.log("Synced job to Firebase Firestore:", job.id);
+  } catch (e) {
+    console.warn("fbSyncJob error:", e);
+  }
+}
+
+// Client-side direct sync for bookings
+async function fbSyncBooking(b) {
+  if (!fbDb || !b || !b.id) return;
+  try {
+    const payload = {
+      id: Number(b.id),
+      worker_id: Number(b.worker_id) || null,
+      customer_id: Number(b.customer_id) || null,
+      job_id: b.job_id ? Number(b.job_id) : null,
+      skill: b.skill || "",
+      start_date: b.start_date || "",
+      days: Number(b.days) || 1,
+      agreed_rate: Number(b.agreed_rate || b.daily_rate) || 0,
+      status: b.status || "requested",
+      address: b.address || "",
+      note: b.note || "",
+      lat: b.lat != null ? Number(b.lat) : null,
+      lng: b.lng != null ? Number(b.lng) : null,
+      start_otp: b.start_otp || "",
+      rating: b.rating != null ? Number(b.rating) : null,
+      updated_at: Date.now() / 1000
+    };
+    await fbDb.collection("bookings").doc(String(b.id)).set(payload, { merge: true });
+    console.log("Synced booking to Firebase Firestore:", b.id);
+  } catch (e) {
+    console.warn("fbSyncBooking error:", e);
+  }
+}
+
+// Client-side direct sync for projects
+async function fbSyncProject(p) {
+  if (!fbDb || !p || !p.id) return;
+  try {
+    const payload = {
+      id: Number(p.id),
+      customer_id: Number(p.customer_id) || null,
+      contractor_id: Number(p.contractor_id) || null,
+      title: p.title || "",
+      description: p.description || "",
+      budget: Number(p.budget || p.total_budget) || 0,
+      status: p.status || "requested",
+      start_date: p.start_date || "",
+      days: Number(p.days) || 1,
+      workers_needed: Number(p.workers_needed) || 1,
+      updated_at: Date.now() / 1000
+    };
+    await fbDb.collection("projects").doc(String(p.id)).set(payload, { merge: true });
+    console.log("Synced project to Firebase Firestore:", p.id);
+  } catch (e) {
+    console.warn("fbSyncProject error:", e);
+  }
+}
+

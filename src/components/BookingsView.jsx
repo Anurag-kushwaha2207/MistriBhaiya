@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { syncBooking } from '../firebase';
 
-export default function BookingsView({ user, token, meta, lang, refreshTrigger, onOpenCounter, showToast, t }) {
+export default function BookingsView({ user, token, meta, lang, refreshTrigger, onOpenCounter, onStartCall, showToast, t }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [startOtpInput, setStartOtpInput] = useState({});
@@ -161,9 +161,24 @@ export default function BookingsView({ user, token, meta, lang, refreshTrigger, 
                   ✔ {t('complete')}
                 </button>
                 {b.other_phone && (
-                  <a href={`tel:${b.other_phone}`} style={{ textDecoration: 'none' }}>
-                    <button type="button" className="sec">{t('call')}</button>
-                  </a>
+                  <button
+                    type="button"
+                    className="sec"
+                    onClick={() => {
+                      if (onStartCall) {
+                        onStartCall({
+                          name: b.other_name || 'साथी',
+                          phone: b.other_phone,
+                          booking_id: b.id,
+                          target_user_id: user?.role === 'worker' ? b.customer_id : b.worker_id
+                        });
+                      } else {
+                        window.location.href = `tel:${b.other_phone}`;
+                      }
+                    }}
+                  >
+                    📞 {t('call')}
+                  </button>
                 )}
               </div>
             )}

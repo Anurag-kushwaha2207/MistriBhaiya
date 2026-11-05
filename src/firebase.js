@@ -29,3 +29,9 @@ export function syncBooking(booking) {
   }
 }
 
+
+export function syncProject(project) {
+  if (typeof window.fbSyncProject === "function") {
+    window.fbSyncProject(project);
+  }
+}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api, getLoc } from '../api';
 import { syncJob } from '../firebase';
 
-export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpenBooking, showToast, t }) {
+export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpenBooking, onStartCall, showToast, t }) {
   const [activeSubTab, setActiveSubTab] = useState('post'); // 'post' or 'mine'
   const [skill, setSkill] = useState('');
   const [desc, setDesc] = useState('');
@@ -290,11 +290,25 @@ export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpen
                         </div>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flex: 'none' }}>
                           {w.phone && (
-                            <a href={`tel:${w.phone}`} style={{ textDecoration: 'none' }}>
-                              <button type="button" className="sec" style={{ padding: '6px 10px', fontSize: '13px' }}>
-                                {t('call')}
-                              </button>
-                            </a>
+                            <button
+                              type="button"
+                              className="sec"
+                              style={{ padding: '6px 10px', fontSize: '13px' }}
+                              onClick={() => {
+                                if (onStartCall) {
+                                  onStartCall({
+                                    name: w.name || 'मिस्त्री',
+                                    phone: w.phone,
+                                    worker_id: w.id,
+                                    booking_id: null
+                                  });
+                                } else {
+                                  window.location.href = `tel:${w.phone}`;
+                                }
+                              }}
+                            >
+                              📞 {t('call')}
+                            </button>
                           )}
                           <button
                             type="button"

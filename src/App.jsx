@@ -20,6 +20,7 @@ import ContractorCrew from './components/ContractorCrew';
 import ContractorProjects from './components/ContractorProjects';
 import ContractorLedger from './components/ContractorLedger';
 import AssistantView from './components/AssistantView';
+import CallModal from './components/CallModal';
 import { BookingModal, ProjectModal, CounterModal, OfferModal } from './components/Modals';
 
 export default function App() {
@@ -32,6 +33,11 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const toastTimerRef = useRef(null);
+
+  // In-App WebRTC Calling
+  const [callTarget, setCallTarget] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const wsRef = useRef(null);
 
   // Modals
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -131,6 +137,7 @@ export default function App() {
 
       try {
         ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
       } catch (e) {
         return;
       }
@@ -166,6 +173,20 @@ export default function App() {
             setInstantOffer(m);
           } else if (m.type === 'instant_closed') {
             setInstantOffer(null);
+          } else if (m.type === 'rtc') {
+            if (m.data?.kind === 'offer') {
+              setIncomingCall({
+                from: m.from,
+                caller: m.caller,
+                booking_id: m.booking_id,
+                target_user_id: m.from,
+                offer: m.data.sdp
+              });
+            } else {
+              window.dispatchEvent(new CustomEvent('mistri_rtc_signal', { detail: m }));
+            }
+          } else if (m.type === 'rtc_unavailable') {
+            showToast('साथी अभी ऐप पर ऑफलाइन है। फोन डायलर से कॉल करें।');
           }
         } catch (e) {}
       };
@@ -250,6 +271,7 @@ export default function App() {
                 meta={meta}
                 lang={lang}
                 refreshTrigger={refreshTrigger}
+                onStartCall={(target) => setCallTarget(target)}
                 showToast={showToast}
                 t={t}
               />
@@ -262,6 +284,7 @@ export default function App() {
                 meta={meta}
                 lang={lang}
                 onOpenBooking={(w) => setBookingWorker(w)}
+                onStartCall={(target) => setCallTarget(target)}
                 onStartInstant={handleStartInstant}
                 showToast={showToast}
                 t={t}
@@ -274,6 +297,7 @@ export default function App() {
                 lang={lang}
                 refreshTrigger={refreshTrigger}
                 onOpenBooking={(w) => setBookingWorker(w)}
+                onStartCall={(target) => setCallTarget(target)}
                 showToast={showToast}
                 t={t}
               />
@@ -334,6 +358,7 @@ export default function App() {
                 lang={lang}
                 refreshTrigger={refreshTrigger}
                 onOpenCounter={(kind, id, onDone) => setCounterData({ kind, id, onDone })}
+                onStartCall={(target) => setCallTarget(target)}
                 showToast={showToast}
                 t={t}
               />
@@ -427,6 +452,22 @@ export default function App() {
           token={token}
           onClose={() => setInstantOffer(null)}
           onAccept={() => setTab('bookings')}
+          showToast={showToast}
+          t={t}
+        />
+      )}
+
+      {/* In-App WebRTC Voice Calling Modal */}
+      {(callTarget || incomingCall) && (
+        <CallModal
+          callTarget={callTarget}
+          incomingCall={incomingCall}
+          ws={wsRef.current}
+          meta={meta}
+          onClose={() => {
+            setCallTarget(null);
+            setIncomingCall(null);
+          }}
           showToast={showToast}
           t={t}
         />

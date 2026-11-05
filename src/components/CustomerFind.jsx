@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api, getLoc } from '../api';
 
-export default function CustomerFind({ token, meta, lang, onOpenBooking, onStartInstant, showToast, t }) {
+export default function CustomerFind({ token, meta, lang, onOpenBooking, onStartCall, onStartInstant, showToast, t }) {
   const [skill, setSkill] = useState('');
   const [radius, setRadius] = useState(15);
   const [freeOnly, setFreeOnly] = useState(false);
@@ -164,14 +164,25 @@ export default function CustomerFind({ token, meta, lang, onOpenBooking, onStart
               </div>
 
               <div style={{ display: 'flex', gap: '8px' }}>
-                <a
-                  href={`tel:${w.phone}`}
-                  style={{ textDecoration: 'none' }}
+                <button
+                  type="button"
+                  className="sec"
+                  style={{ padding: '8px 12px' }}
+                  onClick={() => {
+                    if (onStartCall) {
+                      onStartCall({
+                        name: w.name || 'मिस्त्री',
+                        phone: w.phone,
+                        worker_id: w.id,
+                        booking_id: null
+                      });
+                    } else {
+                      window.location.href = `tel:${w.phone}`;
+                    }
+                  }}
                 >
-                  <button type="button" className="sec" style={{ padding: '8px 12px' }}>
-                    {t('call')}
-                  </button>
-                </a>
+                  📞 {t('call')}
+                </button>
                 <button
                   type="button"
                   style={{ padding: '8px 14px' }}
