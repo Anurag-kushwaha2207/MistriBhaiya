@@ -52,7 +52,11 @@ export default function CallModal({
   const queuedCandidatesRef = useRef([]);
   const timerRef = useRef(null);
 
-  const iceServers = meta?.ice_servers || [{ urls: ['stun:stun.l.google.com:19302'] }];
+  const iceServers = [
+    ...(meta?.ice_servers || []),
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+    { urls: ['stun:stun.cloudflare.com:3478'] }
+  ];
 
   // Send RTC signaling message over WebSocket
   const sendRtc = (data) => {
@@ -69,9 +73,10 @@ export default function CallModal({
     }));
   };
 
-  const cleanupCall = () => {
+  const cleanupCall = (preserveCandidates = false) => {
     stopRingtone();
     clearInterval(timerRef.current);
+    timerRef.current = null;
     if (pcRef.current) {
       try { pcRef.current.close(); } catch (e) {}
       pcRef.current = null;
@@ -80,7 +85,9 @@ export default function CallModal({
       try { streamRef.current.getTracks().forEach(tr => tr.stop()); } catch (e) {}
       streamRef.current = null;
     }
-    queuedCandidatesRef.current = [];
+    if (!preserveCandidates) {
+      queuedCandidatesRef.current = [];
+    }
   };
 
   const handleHangup = () => {
@@ -92,9 +99,15 @@ export default function CallModal({
   };
 
   // Prepare WebRTC Peer Connection
-  const preparePeer = async () => {
-    cleanupCall();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const preparePeer = async (preserveCandidates = false) => {
+    cleanupCall(preserveCandidates);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
     streamRef.current = stream;
 
     const pc = new RTCPeerConnection({ iceServers });
@@ -111,14 +124,32 @@ export default function CallModal({
     pc.ontrack = (e) => {
       if (audioRef.current) {
         audioRef.current.srcObject = e.streams[0];
+        audioRef.current.play().catch(() => {});
+      }
+    };
+
+    const markConnected = () => {
+      setPhase('connected');
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
+      }
+      if (audioRef.current) {
+        audioRef.current.play().catch(() => {});
       }
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') {
-        setPhase('connected');
-        timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-      } else if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+        markConnected();
+      } else if (['failed', 'closed'].includes(pc.connectionState)) {
+        handleHangup();
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (['connected', 'completed'].includes(pc.iceConnectionState)) {
+        markConnected();
+      } else if (['failed'].includes(pc.iceConnectionState)) {
         handleHangup();
       }
     };
@@ -153,24 +184,40 @@ export default function CallModal({
   // Answer incoming call
   const answerCall = async () => {
     stopRingtone();
-    if (!incomingCall?.offer) return;
+    if (!incomingCall?.offer) {
+      showToast('कॉल डेटा नहीं मिला');
+      return;
+    }
     try {
-      const pc = await preparePeer();
-      await pc.setRemoteDescription(incomingCall.offer);
+      const pc = await preparePeer(true);
+      const offerDesc = incomingCall.offer.type
+        ? new RTCSessionDescription(incomingCall.offer)
+        : new RTCSessionDescription({ type: 'offer', sdp: incomingCall.offer.sdp || incomingCall.offer });
 
+      await pc.setRemoteDescription(offerDesc);
+
+      // Drain all queued candidates that arrived while ringing
       for (const candidate of queuedCandidatesRef.current) {
-        await pc.addIceCandidate(candidate).catch(() => {});
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {}
       }
       queuedCandidatesRef.current = [];
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       sendRtc({ kind: 'answer', sdp: answer });
+
       setPhase('connected');
-      timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
+      }
+      if (audioRef.current) {
+        audioRef.current.play().catch(() => {});
+      }
     } catch (err) {
       cleanupCall();
-      showToast('कॉल नहीं उठ सकी: ' + err.message);
+      showToast('कॉल नहीं उठ सकी: ' + (err.message || 'माइक्रोफोन समस्या'));
       onClose();
     }
   };
@@ -195,14 +242,38 @@ export default function CallModal({
 
   // Handle external WebSocket signal events
   useEffect(() => {
-    const handleSignal = (e) => {
+    const handleSignal = async (e) => {
       const { data } = e.detail || {};
       if (!data) return;
       if (data.kind === 'answer' && pcRef.current) {
-        pcRef.current.setRemoteDescription(data.sdp).catch(() => {});
-      } else if (data.kind === 'ice' && pcRef.current) {
-        if (pcRef.current.remoteDescription) {
-          pcRef.current.addIceCandidate(data.candidate).catch(() => {});
+        try {
+          const answerDesc = data.sdp?.type
+            ? new RTCSessionDescription(data.sdp)
+            : new RTCSessionDescription({ type: 'answer', sdp: data.sdp?.sdp || data.sdp });
+          await pcRef.current.setRemoteDescription(answerDesc);
+
+          for (const candidate of queuedCandidatesRef.current) {
+            try {
+              await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {}
+          }
+          queuedCandidatesRef.current = [];
+
+          setPhase('connected');
+          if (!timerRef.current) {
+            timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
+          }
+          if (audioRef.current) {
+            audioRef.current.play().catch(() => {});
+          }
+        } catch (err) {
+          console.warn('Error applying answer sdp:', err);
+        }
+      } else if (data.kind === 'ice') {
+        if (pcRef.current && pcRef.current.remoteDescription) {
+          try {
+            await pcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+          } catch (e) {}
         } else {
           queuedCandidatesRef.current.push(data.candidate);
         }

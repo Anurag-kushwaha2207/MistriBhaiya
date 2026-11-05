@@ -380,3 +380,39 @@ def test_assistant_customer_and_contractor_flows():
     crew = client.get("/api/contractor/crew", headers=kh).json()["crew"]
     assert len(crew) == 1 and crew[0]["name"] == "Shyam" and crew[0]["daily_rate"] == 450
     assert "1 people" in say(kh, "my team")["reply"]
+
+def test_password_and_forgot_flow():
+    # 1. Check unregistered phone
+    p = "9888877777"
+    r = client.post("/api/auth/check-phone", json={"phone": p})
+    assert r.status_code == 200 and r.json()["exists"] is False
+
+    # 2. Register first time user with password
+    otp = client.post("/api/auth/request-otp", json={"phone": p}).json()["dev_otp"]
+    r = client.post("/api/auth/verify-otp", json={"phone": p, "otp": otp, "role": "customer", "name": "Secure User", "password": "pass1234"})
+    assert r.status_code == 200
+    token = r.json()["token"]
+    assert token
+
+    # 3. Check registered phone
+    r = client.post("/api/auth/check-phone", json={"phone": p})
+    assert r.status_code == 200 and r.json()["exists"] is True and r.json()["has_password"] is True
+
+    # 4. Login with password (wrong password should fail)
+    r = client.post("/api/auth/login-password", json={"phone": p, "password": "wrong"})
+    assert r.status_code == 400
+
+    # 5. Login with password (correct)
+    r = client.post("/api/auth/login-password", json={"phone": p, "password": "pass1234"})
+    assert r.status_code == 200 and r.json()["user"]["name"] == "Secure User"
+
+    # 6. Forgot password flow
+    otp2 = client.post("/api/auth/request-otp", json={"phone": p}).json()["dev_otp"]
+    r = client.post("/api/auth/forgot-password", json={"phone": p, "otp": otp2, "new_password": "newpass5678"})
+    assert r.status_code == 200
+
+    # Old password no longer works
+    assert client.post("/api/auth/login-password", json={"phone": p, "password": "pass1234"}).status_code == 400
+
+    # New password works
+    assert client.post("/api/auth/login-password", json={"phone": p, "password": "newpass5678"}).status_code == 200

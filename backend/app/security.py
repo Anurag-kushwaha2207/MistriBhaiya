@@ -32,6 +32,23 @@ def hash_otp(phone: str, code: str) -> str:
 def new_otp() -> str:
     return f"{secrets.randbelow(900000) + 100000}"
 
+def hash_password(password: str) -> str:
+    if not password:
+        return ""
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000).hex()
+    return f"{salt}:{key}"
+
+def verify_password(password: str, hashed: str) -> bool:
+    if not password or not hashed or ":" not in hashed:
+        return False
+    try:
+        salt, key = hashed.split(":", 1)
+        test_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000).hex()
+        return hmac.compare_digest(key, test_key)
+    except Exception:
+        return False
+
 _rate = {}
 def rate_limit(key: str, limit: int, window_s: int):
     now = time.time()

@@ -7,6 +7,7 @@ USERS_DDL = """CREATE TABLE IF NOT EXISTS users(
   phone TEXT UNIQUE NOT NULL,
   name TEXT DEFAULT '',
   role TEXT NOT NULL CHECK(role IN ('worker','customer','contractor')),
+  password_hash TEXT DEFAULT '',
   lang TEXT DEFAULT 'hi',
   is_admin INTEGER DEFAULT 0,
   avatar TEXT DEFAULT '',
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users(
   phone TEXT UNIQUE NOT NULL,
   name TEXT DEFAULT '',
   role TEXT NOT NULL CHECK(role IN ('worker','customer','contractor')),
+  password_hash TEXT DEFAULT '',
   lang TEXT DEFAULT 'hi',
   is_admin INTEGER DEFAULT 0,
   avatar TEXT DEFAULT '',
@@ -160,7 +162,7 @@ def _add_cols(c, table, items):
 
 def migrate(c):
     """Upgrades databases created by older versions (safe to run on every start)."""
-    _add_cols(c, "users", [("avatar", "TEXT DEFAULT ''")])
+    _add_cols(c, "users", [("password_hash", "TEXT DEFAULT ''"), ("avatar", "TEXT DEFAULT ''")])
     _add_cols(c, "bookings", [("start_otp", "TEXT DEFAULT ''"), ("started_at", "REAL"), ("instant_id", "INTEGER"),
                               ("offer_by", "INTEGER"), ("offer_rounds", "INTEGER DEFAULT 0")])
     _add_cols(c, "job_interests", [("rate", "INTEGER DEFAULT 0")])

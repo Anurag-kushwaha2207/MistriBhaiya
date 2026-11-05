@@ -73,6 +73,7 @@ def sync_user(user_id: int):
             if not u:
                 return
             data = dict(u)
+            data.pop("password_hash", None)
             # Make sure boolean is actual bool
             data["is_admin"] = bool(data.get("is_admin"))
             data["updated_at"] = time.time()

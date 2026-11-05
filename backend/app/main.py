@@ -14,7 +14,7 @@ from .calls import connect_call
 from .db import db, init_db
 from .geo import bbox, haversine_km
 from .realtime import hub
-from .security import (current_user, hash_otp, make_token, new_otp, norm_phone, rate_limit, read_token)
+from .security import (current_user, hash_otp, make_token, new_otp, norm_phone, rate_limit, read_token, hash_password, verify_password)
 from .sms import send_otp_sms
 from .common import *   # shared helpers (SKILLS, effective_status, get_booking, ...)
 
@@ -36,11 +36,24 @@ init_db()   # idempotent: creates tables if missing
 class OtpReq(BaseModel):
     phone: str
 
+class CheckPhoneReq(BaseModel):
+    phone: str
+
+class LoginPasswordReq(BaseModel):
+    phone: str
+    password: str
+
+class ForgotPasswordReq(BaseModel):
+    phone: str
+    otp: str
+    new_password: str
+
 class VerifyReq(BaseModel):
     phone: str
     otp: str
     role: str = "customer"
     name: str = ""
+    password: Optional[str] = None
 
 class MeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=60)
@@ -137,6 +150,60 @@ def request_otp(req: OtpReq):
         out["dev_otp"] = code
     return out
 
+@app.post("/api/auth/check-phone")
+def check_phone(req: CheckPhoneReq):
+    phone = norm_phone(req.phone)
+    with db() as c:
+        u = c.execute("SELECT id, name, role, phone, password_hash FROM users WHERE phone=?", (phone,)).fetchone()
+    if u:
+        return {
+            "exists": True,
+            "name": u["name"] or "",
+            "role": u["role"],
+            "has_password": bool(u["password_hash"]),
+        }
+    return {"exists": False}
+
+@app.post("/api/auth/login-password")
+def login_password(req: LoginPasswordReq):
+    phone = norm_phone(req.phone)
+    rate_limit("pw:" + phone, 10, 300)
+    with db() as c:
+        u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
+    if not u:
+        raise HTTPException(404, "अकाउंट नहीं मिला। कृपया पहले रजिस्टर करें। (Account not found. Please register first.)")
+    if not u["password_hash"]:
+        raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
+    if not verify_password(req.password, u["password_hash"]):
+        raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
+    return {"token": make_token(u["id"]), "user": user_public(dict(u))}
+
+@app.post("/api/auth/forgot-password")
+@app.post("/api/auth/reset-password")
+def forgot_password(req: ForgotPasswordReq):
+    phone = norm_phone(req.phone)
+    if not req.new_password or len(req.new_password.strip()) < 4:
+        raise HTTPException(400, "पासवर्ड कम से कम 4 अक्षरों का होना चाहिए (Password must be at least 4 characters)")
+    with db() as c:
+        o = c.execute("SELECT * FROM otps WHERE phone=?", (phone,)).fetchone()
+        if not o or o["expires"] < time.time():
+            raise HTTPException(400, "OTP expired. Request a new one.")
+        if o["attempts"] >= 5:
+            raise HTTPException(429, "Too many wrong attempts")
+        if o["code_hash"] != hash_otp(phone, req.otp.strip()):
+            c.execute("UPDATE otps SET attempts=attempts+1 WHERE phone=?", (phone,))
+            c.commit()
+            raise HTTPException(400, "गलत OTP (Wrong OTP)")
+        c.execute("DELETE FROM otps WHERE phone=?", (phone,))
+        u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
+        if not u:
+            raise HTTPException(404, "यह मोबाइल नंबर रजिस्टर नहीं है (User with this phone not found)")
+        pw_hash = hash_password(req.new_password.strip())
+        c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
+        u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
+    firebase_sync.sync_user(u["id"])
+    return {"token": make_token(u["id"]), "user": user_public(dict(u))}
+
 @app.post("/api/auth/verify")
 @app.post("/api/auth/verify-otp")
 def verify(req: VerifyReq):
@@ -156,18 +223,24 @@ def verify(req: VerifyReq):
         c.execute("DELETE FROM otps WHERE phone=?", (phone,))
         u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
         if not u:
-            cur = c.execute("INSERT INTO users(phone,name,role,is_admin,created_at) VALUES(?,?,?,?,?)",
-                            (phone, req.name.strip()[:60], req.role, 1 if phone in config.ADMIN_PHONES else 0, time.time()))
+            pw_hash = hash_password(req.password.strip()) if req.password else ""
+            cur = c.execute("INSERT INTO users(phone,name,role,password_hash,is_admin,created_at) VALUES(?,?,?,?,?,?)",
+                            (phone, req.name.strip()[:60], req.role, pw_hash, 1 if phone in config.ADMIN_PHONES else 0, time.time()))
             uid = cur.lastrowid
             if req.role == "worker":
                 c.execute("INSERT INTO worker_profiles(user_id,radius_km) VALUES(?,?)", (uid, config.DEFAULT_RADIUS_KM))
             if req.role == "contractor":
                 c.execute("INSERT INTO contractor_profiles(user_id) VALUES(?)", (uid,))
             u = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        else:
+            if req.password and not u["password_hash"]:
+                pw_hash = hash_password(req.password.strip())
+                c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
+                u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
     firebase_sync.sync_user(u["id"])
-    if req.role == "worker":
+    if u["role"] == "worker":
         firebase_sync.sync_worker_profile(u["id"])
-    elif req.role == "contractor":
+    elif u["role"] == "contractor":
         firebase_sync.sync_contractor_profile(u["id"])
     return {"token": make_token(u["id"]), "user": user_public(dict(u))}
 
