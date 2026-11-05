@@ -162,10 +162,6 @@ def _add_cols(c, table, items):
 
 def migrate(c):
     """Upgrades databases created by older versions (safe to run on every start)."""
-    _add_cols(c, "users", [("password_hash", "TEXT DEFAULT ''"), ("avatar", "TEXT DEFAULT ''")])
-    _add_cols(c, "bookings", [("start_otp", "TEXT DEFAULT ''"), ("started_at", "REAL"), ("instant_id", "INTEGER"),
-                              ("offer_by", "INTEGER"), ("offer_rounds", "INTEGER DEFAULT 0")])
-    _add_cols(c, "job_interests", [("rate", "INTEGER DEFAULT 0")])
     # users.role CHECK must allow 'contractor': SQLite cannot alter a CHECK, so rebuild the table once.
     sql = c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
     if sql and "'contractor'" not in sql["sql"]:
@@ -174,11 +170,17 @@ def migrate(c):
         c.execute(USERS_DDL.replace("IF NOT EXISTS users(", "users_new(").replace("CREATE TABLE users_new(", "CREATE TABLE users_new(", 1))
         cols = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
         av_col = "avatar" if "avatar" in cols else "'' AS avatar"
-        c.execute(f"INSERT INTO users_new(id,phone,name,role,lang,is_admin,avatar,created_at) SELECT id,phone,name,role,lang,is_admin,{av_col},created_at FROM users")
+        pw_col = "password_hash" if "password_hash" in cols else "'' AS password_hash"
+        c.execute(f"INSERT INTO users_new(id,phone,name,role,password_hash,lang,is_admin,avatar,created_at) SELECT id,phone,name,role,{pw_col},lang,is_admin,{av_col},created_at FROM users")
         c.execute("DROP TABLE users")
         c.execute("ALTER TABLE users_new RENAME TO users")
         c.commit()
         c.execute("PRAGMA foreign_keys=ON")
+
+    _add_cols(c, "users", [("password_hash", "TEXT DEFAULT ''"), ("avatar", "TEXT DEFAULT ''")])
+    _add_cols(c, "bookings", [("start_otp", "TEXT DEFAULT ''"), ("started_at", "REAL"), ("instant_id", "INTEGER"),
+                              ("offer_by", "INTEGER"), ("offer_rounds", "INTEGER DEFAULT 0")])
+    _add_cols(c, "job_interests", [("rate", "INTEGER DEFAULT 0")])
 
 def init_db():
     with db() as c:
