@@ -206,12 +206,25 @@ export default function App() {
     };
   }, [token, showToast, t]);
 
-  const handleLoginSuccess = (newToken, newUser) => {
+  const handleLoginSuccess = async (newToken, newUser, newProfile) => {
     setToken(newToken);
     setUser(newUser);
+    if (newProfile && Object.keys(newProfile).length > 0) {
+      setProfile(newProfile);
+    }
     if (newUser.role === 'worker') setTab('today');
     else if (newUser.role === 'contractor') setTab('cdash');
     else setTab('find');
+
+    try {
+      const me = await api('/me', 'GET', null, newToken, handleLogout);
+      if (me.user) setUser(me.user);
+      if (me.profile) {
+        setProfile(me.profile);
+        if (me.user.role === 'worker') syncWorkerProfile(me.user.id, me.profile);
+        if (me.user.role === 'contractor') syncContractorProfile(me.user.id, me.profile);
+      }
+    } catch (e) {}
   };
 
   const handleStartInstant = async () => {
@@ -249,6 +262,8 @@ export default function App() {
         {!user || !token ? (
           <LoginView
             onLoginSuccess={handleLoginSuccess}
+            meta={meta}
+            lang={lang}
             showToast={showToast}
             t={t}
           />

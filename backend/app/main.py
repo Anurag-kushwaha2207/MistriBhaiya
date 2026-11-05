@@ -54,6 +54,16 @@ class VerifyReq(BaseModel):
     role: str = "customer"
     name: str = ""
     password: Optional[str] = None
+    skills: Optional[List[str]] = None
+    daily_rate: Optional[int] = None
+    experience_years: Optional[int] = None
+    village: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    radius_km: Optional[float] = None
+    company: Optional[str] = None
+    min_budget: Optional[int] = None
+    about: Optional[str] = None
 
 class MeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=60)
@@ -164,19 +174,32 @@ def check_phone(req: CheckPhoneReq):
         }
     return {"exists": False}
 
+def get_user_profile(c, u):
+    prof = {}
+    if u["role"] == "worker":
+        wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
+        if wp:
+            st = effective_status(wp, busy_ranges(c, [u["id"]])[u["id"]], today(), time.time())
+            prof = {**worker_public(u, wp, st), "lat": wp["lat"], "lng": wp["lng"]}
+    elif u["role"] == "contractor":
+        cp = c.execute("SELECT * FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
+        prof = dict(cp) if cp else {}
+    return prof
+
 @app.post("/api/auth/login-password")
 def login_password(req: LoginPasswordReq):
     phone = norm_phone(req.phone)
     rate_limit("pw:" + phone, 10, 300)
     with db() as c:
         u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
-    if not u:
-        raise HTTPException(404, "अकाउंट नहीं मिला। कृपया पहले रजिस्टर करें। (Account not found. Please register first.)")
-    if not u["password_hash"]:
-        raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
-    if not verify_password(req.password, u["password_hash"]):
-        raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
-    return {"token": make_token(u["id"]), "user": user_public(dict(u))}
+        if not u:
+            raise HTTPException(404, "अकाउंट नहीं मिला। कृपया पहले रजिस्टर करें। (Account not found. Please register first.)")
+        if not u["password_hash"]:
+            raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
+        if not verify_password(req.password, u["password_hash"]):
+            raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
+        prof = get_user_profile(c, u)
+    return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
 
 @app.post("/api/auth/forgot-password")
 @app.post("/api/auth/reset-password")
@@ -201,8 +224,9 @@ def forgot_password(req: ForgotPasswordReq):
         pw_hash = hash_password(req.new_password.strip())
         c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
         u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
+        prof = get_user_profile(c, u)
     firebase_sync.sync_user(u["id"])
-    return {"token": make_token(u["id"]), "user": user_public(dict(u))}
+    return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
 
 @app.post("/api/auth/verify")
 @app.post("/api/auth/verify-otp")
@@ -228,35 +252,32 @@ def verify(req: VerifyReq):
                             (phone, req.name.strip()[:60], req.role, pw_hash, 1 if phone in config.ADMIN_PHONES else 0, time.time()))
             uid = cur.lastrowid
             if req.role == "worker":
-                c.execute("INSERT INTO worker_profiles(user_id,radius_km) VALUES(?,?)", (uid, config.DEFAULT_RADIUS_KM))
+                skills_str = ",".join(req.skills) if req.skills else ""
+                c.execute("INSERT INTO worker_profiles(user_id,skills,daily_rate,experience_years,village,lat,lng,radius_km) VALUES(?,?,?,?,?,?,?,?)",
+                          (uid, skills_str, req.daily_rate or 0, req.experience_years or 0, req.village or "", req.lat, req.lng, req.radius_km or config.DEFAULT_RADIUS_KM))
             if req.role == "contractor":
-                c.execute("INSERT INTO contractor_profiles(user_id) VALUES(?)", (uid,))
+                skills_str = ",".join(req.skills) if req.skills else ""
+                c.execute("INSERT INTO contractor_profiles(user_id,company,skills,village,lat,lng,radius_km,min_budget,experience_years,about) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                          (uid, req.company or "", skills_str, req.village or "", req.lat, req.lng, req.radius_km or 25, req.min_budget or 0, req.experience_years or 0, req.about or ""))
             u = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         else:
             if req.password and not u["password_hash"]:
                 pw_hash = hash_password(req.password.strip())
                 c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
                 u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
+        prof = get_user_profile(c, u)
     firebase_sync.sync_user(u["id"])
     if u["role"] == "worker":
         firebase_sync.sync_worker_profile(u["id"])
     elif u["role"] == "contractor":
         firebase_sync.sync_contractor_profile(u["id"])
-    return {"token": make_token(u["id"]), "user": user_public(dict(u))}
+    return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
 
 @app.get("/api/me")
 def me(u=Depends(current_user)):
-    out = {"user": user_public(u)}
-    if u["role"] == "worker":
-        with db() as c:
-            wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
-            st = effective_status(wp, busy_ranges(c, [u["id"]])[u["id"]], today(), time.time())
-        out["profile"] = {**worker_public(u, wp, st), "lat": wp["lat"], "lng": wp["lng"]}
-    if u["role"] == "contractor":
-        with db() as c:
-            cp = c.execute("SELECT * FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
-        out["profile"] = dict(cp) if cp else {}
-    return out
+    with db() as c:
+        prof = get_user_profile(c, u)
+    return {"user": user_public(u), "profile": prof}
 
 @app.put("/api/me")
 @app.put("/api/profile")
