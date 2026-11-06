@@ -245,8 +245,17 @@ export default function App() {
 
   const handleStartInstant = async () => {
     try {
-      showToast(t('searching'));
-      await api('/instant/start', 'POST', { skill: 'mistri', description: 'Immediate mistri needed' }, token);
+      showToast(t('searching') || 'आस-पास के मिस्त्री खोज रहे हैं…');
+      let loc = null;
+      try { loc = await getLoc(false); } catch (e) {}
+      await api('/instant', 'POST', {
+        skill: 'rajmistri',
+        note: 'तुरंत मिस्त्री की आवश्यकता है',
+        lat: loc?.lat ?? (user?.lat ?? 28.6139),
+        lng: loc?.lng ?? (user?.lng ?? 77.2090),
+        radius_km: 25,
+        days: 1
+      }, token);
     } catch (err) {
       showToast(err.message || "Instant dispatch error");
     }

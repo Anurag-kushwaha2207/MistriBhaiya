@@ -890,15 +890,17 @@ async def _instant_sweeper():
     asyncio.create_task(loop())
 
 @app.post("/api/instant")
+@app.post("/api/instant/start")
 async def instant_create(req: InstantReq, u=Depends(current_user)):
     need_role(u, "customer")
     check_latlng(req.lat, req.lng)
-    if req.skill not in SKILLS:
+    skill = "rajmistri" if req.skill in ("mistri", "rajmistri") else req.skill
+    if skill not in SKILLS:
         raise HTTPException(400, "Unknown skill")
     now = time.time()
     with db() as c:
         cur = c.execute("INSERT INTO instant_requests(customer_id,skill,note,address,lat,lng,radius_km,days,wave,wave_started,created_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)",
-                        (u["id"], req.skill, req.note, req.address, req.lat, req.lng, clamp_radius(req.radius_km), req.days, now, now))
+                        (u["id"], skill, req.note, req.address, req.lat, req.lng, clamp_radius(req.radius_km), req.days, now, now))
         rid = cur.lastrowid
         offered = await dispatch_wave(c, rid, 1)
         status = c.execute("SELECT status FROM instant_requests WHERE id=?", (rid,)).fetchone()["status"]
@@ -918,6 +920,7 @@ async def instant_status(rid: int, u=Depends(current_user)):
     return out
 
 @app.post("/api/instant/{rid}/accept")
+@app.post("/api/instant/offers/{rid}/accept")
 async def instant_accept(rid: int, u=Depends(current_user)):
     need_role(u, "worker")
     with db() as c:
@@ -951,6 +954,7 @@ async def instant_accept(rid: int, u=Depends(current_user)):
     return {"booking_id": bid}
 
 @app.post("/api/instant/{rid}/decline")
+@app.post("/api/instant/offers/{rid}/decline")
 async def instant_decline(rid: int, u=Depends(current_user)):
     need_role(u, "worker")
     with db() as c:

@@ -382,8 +382,8 @@ def test_assistant_customer_and_contractor_flows():
     assert "1 people" in say(kh, "my team")["reply"]
 
 def test_password_and_forgot_flow():
-    # 1. Check unregistered phone
-    p = "9888877777"
+    # 1. Check unregistered phone (using unique number)
+    p = f"988{int(time.time()*100)%10000000:07d}"
     r = client.post("/api/auth/check-phone", json={"phone": p})
     assert r.status_code == 200 and r.json()["exists"] is False
 

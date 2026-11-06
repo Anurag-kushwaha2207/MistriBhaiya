@@ -317,9 +317,10 @@ class ProjectReq(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     skill: str = ""
-    start_date: str
+    start_date: Optional[str] = None
     days: int = Field(1, ge=1, le=365)
-    budget: int = Field(0, ge=0, le=100_000_000)          # total budget offered by the customer
+    budget: Optional[int] = Field(0, ge=0, le=100_000_000)          # total budget offered by the customer
+    total_budget: Optional[int] = Field(None, ge=0, le=100_000_000)
     workers_needed: int = Field(1, ge=1, le=200)
 
 def project_party(c, pid, u):
@@ -332,6 +333,7 @@ def project_party(c, pid, u):
 @router.post("/api/contractor/projects")
 async def project_create(req: ProjectReq, u=Depends(current_user)):
     need_role(u, "customer")
+    budget_val = req.budget if req.budget else (req.total_budget or 0)
     start_date_str = req.start_date if req.start_date else today().isoformat()
     try:
         if pdate(start_date_str) < today():
@@ -344,9 +346,9 @@ async def project_create(req: ProjectReq, u=Depends(current_user)):
             raise HTTPException(404, "Contractor not found")
         cur = c.execute("INSERT INTO projects(customer_id,contractor_id,title,description,address,lat,lng,skill,start_date,days,budget,workers_needed,offer_by,offer_rounds,created_at,updated_at) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
-                        (u["id"], req.contractor_id, req.title, req.description, req.address, req.lat, req.lng, req.skill, start_date_str, req.days, req.budget, req.workers_needed, u["id"], now, now))
+                        (u["id"], req.contractor_id, req.title, req.description, req.address, req.lat, req.lng, req.skill, start_date_str, req.days, budget_val, req.workers_needed, u["id"], now, now))
         pid = cur.lastrowid
-        c.execute("INSERT INTO offers(kind,ref_id,from_id,rate,days,note,created_at) VALUES('project',?,?,?,?,?,?)", (pid, u["id"], req.budget, req.days, "", now))
+        c.execute("INSERT INTO offers(kind,ref_id,from_id,rate,days,note,created_at) VALUES('project',?,?,?,?,?,?)", (pid, u["id"], budget_val, req.days, "", now))
     firebase_sync.sync_project(pid)
     await hub.to_user(req.contractor_id, {"type": "project_new", "project_id": pid, "title": req.title, "customer": u["name"] or "Customer"})
     return {"id": pid}
@@ -361,6 +363,7 @@ def projects_mine(u=Depends(current_user)):
         out = []
         for p in rows:
             d = dict(p)
+            d["total_budget"] = d.get("budget", 0)
             d["crew_assigned"] = c.execute("SELECT COUNT(*) FROM project_crew WHERE project_id=?", (p["id"],)).fetchone()[0]
             d["my_turn"] = p["status"] == "requested" and p["offer_by"] != u["id"]
             out.append(d)

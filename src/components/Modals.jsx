@@ -127,7 +127,10 @@ export function ProjectModal({ contractor, token, onClose, onSuccess, showToast,
         contractor_id: contractor.id,
         title,
         description: desc,
+        budget: parseInt(budget, 10) || 0,
         total_budget: parseInt(budget, 10) || 0,
+        start_date: new Date().toISOString().split('T')[0],
+        days: 30,
         workers_needed: parseInt(workersNeeded, 10) || 1,
         ...(loc ? { lat: loc.lat, lng: loc.lng } : {})
       };
@@ -324,9 +327,10 @@ export function OfferModal({ offer, token, onClose, onAccept, showToast, t }) {
 
   const handleAccept = async () => {
     try {
-      await api(`/instant/offers/${offer.offer_id}/accept`, 'POST', null, token);
+      const reqId = offer.request_id || offer.offer_id || offer.id;
+      await api(`/instant/${reqId}/accept`, 'POST', null, token);
       showToast(t('saved'));
-      onAccept(offer);
+      if (onAccept) onAccept(offer);
       onClose();
     } catch (err) {
       showToast(err.message || "Offer accept failed");
@@ -335,7 +339,8 @@ export function OfferModal({ offer, token, onClose, onAccept, showToast, t }) {
 
   const handleDecline = async () => {
     try {
-      await api(`/instant/offers/${offer.offer_id}/decline`, 'POST', null, token);
+      const reqId = offer.request_id || offer.offer_id || offer.id;
+      await api(`/instant/${reqId}/decline`, 'POST', null, token);
     } catch (e) {}
     onClose();
   };

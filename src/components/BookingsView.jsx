@@ -196,13 +196,6 @@ export default function BookingsView({
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       <button
-                        className="sec"
-                        style={{ flex: 1, minWidth: '90px', fontSize: '13px', padding: '7px 10px' }}
-                        onClick={() => onOpenCounter('bookings', b.id, loadBookings)}
-                      >
-                        ↔ रेट बदलें
-                      </button>
-                      <button
                         className="warn"
                         style={{ flex: 1, minWidth: '80px', fontSize: '13px', padding: '7px 10px' }}
                         onClick={() => handleRejectOffer(b.id)}

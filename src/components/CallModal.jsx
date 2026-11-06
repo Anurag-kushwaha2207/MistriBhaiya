@@ -62,7 +62,7 @@ export default function CallModal({
   const sendRtc = (data) => {
     if (!ws || ws.readyState !== 1) return;
     const bookingId = callTarget?.booking_id || incomingCall?.booking_id || null;
-    const targetUserId = incomingCall ? incomingCall.from : (callTarget?.worker_id || callTarget?.customer_id || null);
+    const targetUserId = incomingCall ? (incomingCall.from || incomingCall.target_user_id) : (callTarget?.target_user_id || callTarget?.worker_id || callTarget?.customer_id || null);
     const targetPhone = incomingCall ? (incomingCall.caller?.phone || null) : (callTarget?.phone || null);
     ws.send(JSON.stringify({
       type: 'rtc',
