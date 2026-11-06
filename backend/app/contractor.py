@@ -259,6 +259,7 @@ def crew_remove(cid: int, u=Depends(current_user)):
 
 class CrewAttendanceReq(BaseModel):
     present: bool
+    project_id: Optional[int] = None
 
 @router.post("/api/contractor/crew/{cid}/attendance")
 def crew_attendance(cid: int, req: CrewAttendanceReq, u=Depends(current_user)):
@@ -266,13 +267,20 @@ def crew_attendance(cid: int, req: CrewAttendanceReq, u=Depends(current_user)):
     with db() as c:
         own_crew(c, cid, u)
         t_str = today().isoformat()
-        c.execute("INSERT OR REPLACE INTO attendance(crew_id,project_id,date,present,wage) VALUES(?,NULL,?,?,?)",
-                  (cid, t_str, 1 if req.present else 0, 0))
+        pid = req.project_id
+        if not pid:
+            prow = c.execute("SELECT pc.project_id FROM project_crew pc JOIN projects p ON p.id=pc.project_id WHERE pc.crew_id=? AND p.contractor_id=? AND p.status IN ('accepted','in_progress') ORDER BY p.id DESC", (cid, u["id"])).fetchone()
+            pid = prow["project_id"] if prow else 0
+        m = c.execute("SELECT daily_rate FROM crew_members WHERE id=?", (cid,)).fetchone()
+        wage = (m["daily_rate"] if m else 0) if req.present else 0
+        c.execute("INSERT OR REPLACE INTO attendance(project_id,crew_id,day,present,wage) VALUES(?,?,?,?,?)",
+                  (pid, cid, t_str, 1 if req.present else 0, wage))
     return {"ok": True}
 
 class CrewPaymentReq(BaseModel):
     amount: int
-    type: str = "advance"
+    type: Optional[str] = "advance"
+    kind: Optional[str] = None
     note: str = ""
 
 @router.post("/api/contractor/crew/{cid}/payment")
@@ -280,7 +288,7 @@ def crew_payment(cid: int, req: CrewPaymentReq, u=Depends(current_user)):
     contractor_only(u)
     with db() as c:
         own_crew(c, cid, u)
-        kind = "payment" if req.type == "payment" else "advance"
+        kind = "payment" if (req.type == "payment" or req.kind == "payment") else "advance"
         c.execute("INSERT INTO ledger(contractor_id,crew_id,project_id,kind,amount,note,created_at) VALUES(?,?,NULL,?,?,?,?)",
                   (u["id"], cid, kind, req.amount, req.note, time.time()))
     return {"ok": True}
