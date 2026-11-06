@@ -127,37 +127,41 @@ def restore_user_if_missing(phone: str) -> Optional[dict]:
             if role == "worker":
                 wp_doc = get_fs_doc("worker_profiles", str(uid))
                 if wp_doc:
+                    raw_skills = wp_doc.get("skills") or ""
+                    skills_str = ",".join(raw_skills) if isinstance(raw_skills, (list, tuple)) else str(raw_skills)
                     c.execute(
                         "INSERT OR REPLACE INTO worker_profiles(user_id, skills, daily_rate, experience_years, village, lat, lng, radius_km) "
                         "VALUES(?,?,?,?,?,?,?,?)",
                         (
                             uid,
-                            wp_doc.get("skills") or "",
-                            wp_doc.get("daily_rate") or 0,
-                            wp_doc.get("experience_years") or 0,
-                            wp_doc.get("village") or "",
-                            wp_doc.get("lat"),
-                            wp_doc.get("lng"),
-                            wp_doc.get("radius_km") or 10,
+                            skills_str,
+                            int(wp_doc.get("daily_rate") or 0),
+                            int(wp_doc.get("experience_years") or 0),
+                            str(wp_doc.get("village") or ""),
+                            float(wp_doc["lat"]) if wp_doc.get("lat") is not None else None,
+                            float(wp_doc["lng"]) if wp_doc.get("lng") is not None else None,
+                            float(wp_doc.get("radius_km") or 10),
                         ),
                     )
             elif role == "contractor":
                 cp_doc = get_fs_doc("contractor_profiles", str(uid))
                 if cp_doc:
+                    raw_skills = cp_doc.get("skills") or ""
+                    skills_str = ",".join(raw_skills) if isinstance(raw_skills, (list, tuple)) else str(raw_skills)
                     c.execute(
                         "INSERT OR REPLACE INTO contractor_profiles(user_id, company, skills, village, lat, lng, radius_km, min_budget, experience_years, about) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?)",
                         (
                             uid,
-                            cp_doc.get("company") or "",
-                            cp_doc.get("skills") or "",
-                            cp_doc.get("village") or "",
-                            cp_doc.get("lat"),
-                            cp_doc.get("lng"),
-                            cp_doc.get("radius_km") or 25,
-                            cp_doc.get("min_budget") or 0,
-                            cp_doc.get("experience_years") or 0,
-                            cp_doc.get("about") or "",
+                            str(cp_doc.get("company") or ""),
+                            skills_str,
+                            str(cp_doc.get("village") or ""),
+                            float(cp_doc["lat"]) if cp_doc.get("lat") is not None else None,
+                            float(cp_doc["lng"]) if cp_doc.get("lng") is not None else None,
+                            float(cp_doc.get("radius_km") or 25),
+                            int(cp_doc.get("min_budget") or 0),
+                            int(cp_doc.get("experience_years") or 0),
+                            str(cp_doc.get("about") or ""),
                         ),
                     )
             u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
