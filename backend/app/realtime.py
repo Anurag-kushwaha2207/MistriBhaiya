@@ -9,7 +9,16 @@ class Hub:
 
     async def add(self, ws: WebSocket, uid: int):
         await ws.accept()
-        self.conns.append({"ws": ws, "uid": uid, "sub": None})
+        alive = []
+        for c in self.conns:
+            try:
+                from starlette.websockets import WebSocketState
+                if getattr(c["ws"], "client_state", None) == WebSocketState.CONNECTED:
+                    alive.append(c)
+            except Exception:
+                pass
+        alive.append({"ws": ws, "uid": uid, "sub": None})
+        self.conns = alive
 
     def remove(self, ws):
         self.conns = [c for c in self.conns if c["ws"] is not ws]
@@ -51,3 +60,24 @@ class Hub:
                 await self._send(c, {"type": "worker_status", "worker": public})
 
 hub = Hub()
+
+async def notify(user_id: int, payload: dict, c=None) -> int:
+    """Persists notification into DB (so offline users see missed events) and delivers via live WebSocket."""
+    import time
+    from .db import db
+    try:
+        if c is not None:
+            c.execute(
+                "INSERT INTO notifications(user_id, type, payload_json, created_at, read) VALUES(?,?,?,?,0)",
+                (user_id, payload.get("type", "notification"), json.dumps(payload), time.time())
+            )
+        else:
+            with db() as conn:
+                conn.execute(
+                    "INSERT INTO notifications(user_id, type, payload_json, created_at, read) VALUES(?,?,?,?,0)",
+                    (user_id, payload.get("type", "notification"), json.dumps(payload), time.time())
+                )
+    except Exception as e:
+        import logging
+        logging.getLogger("realtime").warning(f"Could not persist notification for {user_id}: {e}")
+    return await hub.to_user(user_id, payload)

@@ -133,6 +133,20 @@ CREATE TABLE IF NOT EXISTS call_logs(
   caller_id INTEGER NOT NULL, callee_id INTEGER NOT NULL, booking_id INTEGER,
   provider TEXT, provider_call_id TEXT DEFAULT '', status TEXT DEFAULT '', created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS notifications(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  read INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_u ON notifications(user_id, read);
+CREATE INDEX IF NOT EXISTS idx_b_customer ON bookings(customer_id);
+CREATE INDEX IF NOT EXISTS idx_b_job ON bookings(job_id);
+CREATE INDEX IF NOT EXISTS idx_offers_ref ON offers(kind, ref_id);
+CREATE INDEX IF NOT EXISTS idx_crew_worker ON crew_members(worker_id);
+CREATE INDEX IF NOT EXISTS idx_att_proj ON attendance(project_id);
 """
 
 def connect():
@@ -181,6 +195,21 @@ def migrate(c):
     _add_cols(c, "bookings", [("start_otp", "TEXT DEFAULT ''"), ("started_at", "REAL"), ("instant_id", "INTEGER"),
                               ("offer_by", "INTEGER"), ("offer_rounds", "INTEGER DEFAULT 0")])
     _add_cols(c, "job_interests", [("rate", "INTEGER DEFAULT 0")])
+
+    c.execute("""CREATE TABLE IF NOT EXISTS notifications(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at REAL NOT NULL,
+      read INTEGER DEFAULT 0
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_notifications_u ON notifications(user_id, read)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_b_customer ON bookings(customer_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_b_job ON bookings(job_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_offers_ref ON offers(kind, ref_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_crew_worker ON crew_members(worker_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_att_proj ON attendance(project_id)")
 
 def init_db():
     with db() as c:

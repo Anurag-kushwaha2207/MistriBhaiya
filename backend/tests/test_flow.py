@@ -13,16 +13,23 @@ LAT, LNG = 25.1500, 82.5700          # a point near Mirzapur (example)
 NEAR = (25.1500 + 3 / 111, LNG)      # ~3 km away
 FAR = (25.1500 + 12 / 111, LNG)      # ~12 km away
 
-def login(phone, role, name):
+def login(phone, role, name, loc=None):
     r = client.post("/api/auth/request-otp", json={"phone": phone}); assert r.status_code == 200
     otp = r.json()["dev_otp"]
-    r = client.post("/api/auth/verify", json={"phone": phone, "otp": otp, "role": role, "name": name}); assert r.status_code == 200, r.text
+    body = {"phone": phone, "otp": otp, "role": role, "name": name}
+    if loc:
+        body["lat"], body["lng"] = loc[0], loc[1]
+    elif role in ("worker", "contractor"):
+        body["lat"], body["lng"] = LAT, LNG
+    r = client.post("/api/auth/verify", json=body); assert r.status_code == 200, r.text
     return {"Authorization": "Bearer " + r.json()["token"]}, r.json()["user"]["id"]
 
-def make_worker(phone, name, loc, skills=("rajmistri",), radius=6, rate=700):
-    h, uid = login(phone, "worker", name)
+def make_worker(phone, name, loc, skills=("rajmistri",), radius=6, rate=700, free=True):
+    h, uid = login(phone, "worker", name, loc=loc)
     r = client.put("/api/worker/profile", headers=h, json={"skills": list(skills), "daily_rate": rate, "experience_years": 5,
                     "village": "Test", "lat": loc[0], "lng": loc[1], "radius_km": radius}); assert r.status_code == 200, r.text
+    if free:
+        client.post("/api/worker/status", headers=h, json={"status": "free"})
     return h, uid
 
 def search(h, **kw):
@@ -31,8 +38,8 @@ def search(h, **kw):
     return r.json()["workers"]
 
 def test_full_flow():
-    wn_h, wn = make_worker("9000000011", "Near Mistri", NEAR)
-    wf_h, wf = make_worker("9000000012", "Far Mistri", FAR, radius=20)
+    wn_h, wn = make_worker("9000000011", "Near Mistri", NEAR, free=False)
+    wf_h, wf = make_worker("9000000012", "Far Mistri", FAR, radius=20, free=False)
     c_h, cid = login("9000000021", "customer", "Ghar Malik")
 
     # distance is customizable: 6 km sees only the near one, 15 km sees both

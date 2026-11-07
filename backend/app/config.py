@@ -40,7 +40,7 @@ EXOTEL_EXOPHONE = os.getenv("EXOTEL_EXOPHONE", "")       # your virtual number (
 
 # Rapido-style instant dispatch
 INSTANT_WAVE_SECONDS = float(os.getenv("INSTANT_WAVE_SECONDS", "30"))   # how long each wave of offers stays open
-INSTANT_WAVE_SIZE = int(os.getenv("INSTANT_WAVE_SIZE", "5"))            # offers sent per wave (nearest free workers first)
+INSTANT_WAVE_SIZE = int(os.getenv("INSTANT_WAVE_SIZE", "1"))            # offers sent per wave (nearest free workers first)
 INSTANT_MAX_WAVES = int(os.getenv("INSTANT_MAX_WAVES", "3"))
 REQUIRE_START_OTP = _b("REQUIRE_START_OTP", "1")                        # worker must enter customer's OTP to start work
 

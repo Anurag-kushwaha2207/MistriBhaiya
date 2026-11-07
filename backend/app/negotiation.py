@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from . import firebase_sync
 from .common import *            # helpers
 from .db import db
-from .realtime import hub
+from .realtime import hub, notify
 from .security import current_user, rate_limit
 
 router = APIRouter()
@@ -70,8 +70,8 @@ async def counter(kind: str, rid: int, req: CounterReq, u=Depends(current_user))
         if (r["offer_rounds"] or 0) >= MAX_ROUNDS:
             raise HTTPException(400, "Too many rounds. Please accept or reject.")
         set_offer(c, kind, r, u, req.rate, req.days, req.note)
-    await hub.to_user(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid,
-                              "status": "countered", "rate": req.rate, "days": req.days or r["days"], "from": u["name"] or "User"})
+    await notify(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid,
+                         "status": "countered", "rate": req.rate, "days": req.days or r["days"], "from": u["name"] or "User"})
     if kind == "bookings":
         firebase_sync.sync_booking(rid)
     else:
@@ -81,6 +81,7 @@ async def counter(kind: str, rid: int, req: CounterReq, u=Depends(current_user))
 @router.post("/api/{kind}/{rid}/accept")
 async def accept(kind: str, rid: int, u=Depends(current_user)):
     """Accept the other side's latest offer. Deal is fixed at that amount."""
+    rejected_workers = []
     with db() as c:
         r, other = load(c, kind, rid, u)
         if r["status"] != "requested":
@@ -94,15 +95,23 @@ async def accept(kind: str, rid: int, u=Depends(current_user)):
             c.execute("UPDATE bookings SET status='accepted',start_otp=?,updated_at=? WHERE id=?", (f"{secrets.randbelow(9000) + 1000}", now, rid))
             if r["job_id"]:
                 c.execute("UPDATE jobs SET status='assigned' WHERE id=?", (r["job_id"],))
+                # Auto-reject other pending bookings for that job
+                pending = c.execute("SELECT id, worker_id FROM bookings WHERE job_id=? AND id!=? AND status='requested'", (r["job_id"], rid)).fetchall()
+                for p_b in pending:
+                    c.execute("UPDATE bookings SET status='rejected',updated_at=? WHERE id=?", (now, p_b["id"]))
+                    rejected_workers.append((p_b["id"], p_b["worker_id"]))
             await push_worker_status(c, r["worker_id"])
         else:
             c.execute("UPDATE projects SET status='accepted',updated_at=? WHERE id=?", (now, rid))
     if kind == "bookings":
         firebase_sync.sync_booking(rid)
         firebase_sync.sync_worker_profile(r["worker_id"])
+        for p_id, p_wid in rejected_workers:
+            firebase_sync.sync_booking(p_id)
+            await notify(p_wid, {"type": "booking_update", "booking_id": p_id, "status": "rejected", "reason": "job_assigned"})
     else:
         firebase_sync.sync_project(rid)
-    await hub.to_user(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid, "status": "accepted"})
+    await notify(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid, "status": "accepted"})
     return {"ok": True}
 
 @router.post("/api/{kind}/{rid}/reject")
@@ -116,7 +125,7 @@ async def reject(kind: str, rid: int, u=Depends(current_user)):
         firebase_sync.sync_booking(rid)
     else:
         firebase_sync.sync_project(rid)
-    await hub.to_user(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid, "status": "rejected"})
+    await notify(other, {"type": notify_event(kind), ("booking_id" if kind == "bookings" else "project_id"): rid, "status": "rejected"})
     return {"ok": True}
 
 @router.get("/api/{kind}/{rid}/negotiation")
@@ -139,7 +148,7 @@ async def post_message(kind: str, rid: int, req: MsgReq, u=Depends(current_user)
     with db() as c:
         r, other = load(c, kind, rid, u)
         c.execute("INSERT INTO messages(kind,ref_id,from_id,text,created_at) VALUES(?,?,?,?,?)", (KINDS[kind], rid, u["id"], text, time.time()))
-    await hub.to_user(other, {"type": "chat", "kind": kind, "ref_id": rid, "from": u["name"] or "User", "text": text})
+    await notify(other, {"type": "chat", "kind": kind, "ref_id": rid, "from": u["name"] or "User", "text": text})
     return {"ok": True, "text": text}
 
 @router.get("/api/{kind}/{rid}/messages")

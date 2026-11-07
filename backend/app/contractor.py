@@ -14,7 +14,7 @@ from . import config, firebase_sync
 from .calls import connect_call
 from .common import *
 from .db import db
-from .realtime import hub
+from .realtime import hub, notify
 from .security import current_user, norm_phone, rate_limit
 
 router = APIRouter()
@@ -43,8 +43,10 @@ def contractor_profile(req: ContractorProfile, u=Depends(current_user)):
     contractor_only(u)
     with db() as c:
         cp = c.execute("SELECT * FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
-        new_lat = req.lat if req.lat is not None else (cp["lat"] if cp and cp["lat"] is not None else 26.4505)
-        new_lng = req.lng if req.lng is not None else (cp["lng"] if cp and cp["lng"] is not None else 80.1912)
+        new_lat = req.lat if req.lat is not None else (cp["lat"] if cp and cp["lat"] is not None else None)
+        new_lng = req.lng if req.lng is not None else (cp["lng"] if cp and cp["lng"] is not None else None)
+        if new_lat is None or new_lng is None:
+            raise HTTPException(400, "Location (lat, lng) is required for contractor profile")
         check_latlng(new_lat, new_lng)
         skills = [s for s in req.skills if s in SKILLS]
         c.execute("UPDATE contractor_profiles SET company=?,skills=?,village=?,lat=?,lng=?,radius_km=?,min_budget=?,experience_years=?,about=? WHERE user_id=?",
@@ -65,16 +67,30 @@ def contractor_location(req: ContractorLocReq, u=Depends(current_user)):
 @router.get("/api/contractors")
 @router.get("/api/contractors/search")
 def contractors_search(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = 25, skill: str = "", min_rating: float = 0, sort: str = "distance",
-                       u=Depends(current_user)):
-    w_lat = lat if lat is not None else 26.4505
-    w_lng = lng if lng is not None else 80.1912
+                       on_date: str = "", date: str = "", expand: bool = False, u=Depends(current_user)):
+    target_date = on_date or date
+    w_lat = lat
+    w_lng = lng
+    if w_lat is None or w_lng is None:
+        with db() as c:
+            if u["role"] == "worker":
+                p = c.execute("SELECT lat, lng FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
+            elif u["role"] == "contractor":
+                p = c.execute("SELECT lat, lng FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
+            else:
+                p = c.execute("SELECT lat, lng FROM jobs WHERE customer_id=? AND lat IS NOT NULL ORDER BY id DESC LIMIT 1", (u["id"],)).fetchone()
+            if p and p["lat"] is not None and p["lng"] is not None:
+                w_lat, w_lng = p["lat"], p["lng"]
+            else:
+                raise HTTPException(400, "Location required to search contractors")
+    check_latlng(w_lat, w_lng)
     r = clamp_radius(radius_km)
     la0, la1, ln0, ln1 = bbox(w_lat, w_lng, r)
     with db() as c:
         if lat is not None and lng is not None:
             rows = c.execute("SELECT u.id,u.name,cp.* FROM users u JOIN contractor_profiles cp ON cp.user_id=u.id "
                              "WHERE cp.lat BETWEEN ? AND ? AND cp.lng BETWEEN ? AND ?", (la0, la1, ln0, ln1)).fetchall()
-            if not rows:
+            if not rows and expand:
                 rows = c.execute("SELECT u.id,u.name,cp.* FROM users u JOIN contractor_profiles cp ON cp.user_id=u.id").fetchall()
         else:
             rows = c.execute("SELECT u.id,u.name,cp.* FROM users u JOIN contractor_profiles cp ON cp.user_id=u.id").fetchall()
@@ -92,8 +108,8 @@ def contractors_search(lat: Optional[float] = None, lng: Optional[float] = None,
                         "village": x["village"], "distance_km": round(d, 1) if d is not None else None, "rating_avg": round(x["rating_avg"] or 0, 1), "rating_count": x["rating_count"],
                         "verified": bool(x["verified"]), "experience_years": x["experience_years"], "min_budget": x["min_budget"], "about": x["about"], "crew_size": crew})
         
-        # Fallback if distance check removed all results
-        if not out and rows:
+        # Fallback if distance check removed all results, but only if expand=True
+        if not out and rows and expand:
             for x in rows:
                 d = haversine_km(w_lat, w_lng, x["lat"], x["lng"]) if (x["lat"] is not None and x["lng"] is not None) else None
                 if skill and f",{skill}," not in f",{x['skills']},":
@@ -101,7 +117,7 @@ def contractors_search(lat: Optional[float] = None, lng: Optional[float] = None,
                 crew = c.execute("SELECT COUNT(*) FROM crew_members WHERE contractor_id=? AND status='active'", (x["id"],)).fetchone()[0]
                 out.append({"id": x["id"], "name": x["name"] or "Contractor", "company": x["company"], "skills": [s for s in (x["skills"] or "").split(",") if s],
                             "village": x["village"], "distance_km": round(d, 1) if d is not None else None, "rating_avg": round(x["rating_avg"] or 0, 1), "rating_count": x["rating_count"],
-                            "verified": bool(x["verified"]), "experience_years": x["experience_years"], "min_budget": x["min_budget"], "about": x["about"], "crew_size": crew})
+                            "verified": bool(x["verified"]), "experience_years": x["experience_years"], "min_budget": x["min_budget"], "about": x["about"], "crew_size": crew, "outside_radius": True})
     out.sort(key=(lambda z: (-z["rating_avg"], z["distance_km"] if z["distance_km"] is not None else 999)) if sort == "rating" else (lambda z: (-z["crew_size"], z["distance_km"] if z["distance_km"] is not None else 999)) if sort == "crew" else (lambda z: z["distance_km"] if z["distance_km"] is not None else 999))
     return {"contractors": out[:50]}
 
@@ -215,7 +231,7 @@ async def crew_add(req: CrewReq, u=Depends(current_user)):
         if wk:
             invite_uid = wk["id"]
     if invite_uid:
-        await hub.to_user(invite_uid, {"type": "crew_invite", "crew_id": cid, "contractor": u["name"] or "Contractor"})
+        await notify(invite_uid, {"type": "crew_invite", "crew_id": cid, "contractor": u["name"] or "Contractor"})
     return {"id": cid, "status": status}
 
 @router.post("/api/contractor/crew/from-worker/{wid}")
@@ -230,7 +246,7 @@ async def crew_from_worker(wid: int, req: CrewFromWorker, u=Depends(current_user
         cur = c.execute("INSERT INTO crew_members(contractor_id,worker_id,name,phone,skills,daily_rate,status,created_at) VALUES(?,?,?,?,?,?,'invited',?)",
                         (u["id"], wid, w["name"] or "Mistri", w["phone"], w["skills"], req.daily_rate or w["daily_rate"], time.time()))
         cid = cur.lastrowid
-    await hub.to_user(wid, {"type": "crew_invite", "crew_id": cid, "contractor": u["name"] or "Contractor"})
+    await notify(wid, {"type": "crew_invite", "crew_id": cid, "contractor": u["name"] or "Contractor"})
     return {"id": cid, "status": "invited"}
 
 def own_crew(c, cid, u):
@@ -313,7 +329,7 @@ async def invite_respond(cid: int, req: InviteReply, u=Depends(current_user)):
         if not m:
             raise HTTPException(404, "Invite not found")
         c.execute("UPDATE crew_members SET status=? WHERE id=?", ("active" if req.accept else "declined", cid))
-    await hub.to_user(m["contractor_id"], {"type": "crew_update", "crew_id": cid, "status": "active" if req.accept else "declined", "name": u["name"]})
+    await notify(m["contractor_id"], {"type": "crew_update", "crew_id": cid, "status": "active" if req.accept else "declined", "name": u["name"]})
     return {"ok": True}
 
 # ---------------------------------------------------------------- projects (customer <-> contractor)
@@ -358,7 +374,7 @@ async def project_create(req: ProjectReq, u=Depends(current_user)):
         pid = cur.lastrowid
         c.execute("INSERT INTO offers(kind,ref_id,from_id,rate,days,note,created_at) VALUES('project',?,?,?,?,?,?)", (pid, u["id"], budget_val, req.days, "", now))
     firebase_sync.sync_project(pid)
-    await hub.to_user(req.contractor_id, {"type": "project_new", "project_id": pid, "title": req.title, "customer": u["name"] or "Customer"})
+    await notify(req.contractor_id, {"type": "project_new", "project_id": pid, "title": req.title, "customer": u["name"] or "Customer"})
     return {"id": pid}
 
 @router.get("/api/projects/mine")
@@ -397,7 +413,7 @@ async def project_start(pid: int, u=Depends(current_user)):
         if p["contractor_id"] != u["id"] or p["status"] != "accepted":
             raise HTTPException(400, "Project must be accepted first")
         c.execute("UPDATE projects SET status='in_progress',updated_at=? WHERE id=?", (time.time(), pid))
-    await hub.to_user(p["customer_id"], {"type": "project_update", "project_id": pid, "status": "in_progress"})
+    await notify(p["customer_id"], {"type": "project_update", "project_id": pid, "status": "in_progress"})
     return {"ok": True}
 
 @router.post("/api/projects/{pid}/complete")
@@ -408,7 +424,7 @@ async def project_complete(pid: int, u=Depends(current_user)):
         if p["contractor_id"] != u["id"] or p["status"] not in ("accepted", "in_progress"):
             raise HTTPException(400, "Cannot complete")
         c.execute("UPDATE projects SET status='completed',updated_at=? WHERE id=?", (time.time(), pid))
-    await hub.to_user(p["customer_id"], {"type": "project_update", "project_id": pid, "status": "completed"})
+    await notify(p["customer_id"], {"type": "project_update", "project_id": pid, "status": "completed"})
     return {"ok": True}
 
 @router.post("/api/projects/{pid}/cancel")
@@ -419,7 +435,7 @@ async def project_cancel(pid: int, u=Depends(current_user)):
             raise HTTPException(400, "Cannot cancel now")
         c.execute("UPDATE projects SET status='cancelled',updated_at=? WHERE id=?", (time.time(), pid))
     other = p["contractor_id"] if u["id"] == p["customer_id"] else p["customer_id"]
-    await hub.to_user(other, {"type": "project_update", "project_id": pid, "status": "cancelled"})
+    await notify(other, {"type": "project_update", "project_id": pid, "status": "cancelled"})
     return {"ok": True}
 
 class ProjectStatusReq(BaseModel):
@@ -447,7 +463,7 @@ async def project_set_status(pid: int, req: ProjectStatusReq, u=Depends(current_
             c.execute("UPDATE projects SET status=?,updated_at=? WHERE id=?", (new_st, time.time(), pid))
             event_st = new_st
     firebase_sync.sync_project(pid)
-    await hub.to_user(p["customer_id"], {"type": "project_update", "project_id": pid, "status": event_st})
+    await notify(p["customer_id"], {"type": "project_update", "project_id": pid, "status": event_st})
     return {"ok": True, "status": event_st}
 
 class RateReq(BaseModel):
@@ -472,7 +488,7 @@ class AssignReq(BaseModel):
 @router.post("/api/contractor/projects/{pid}/assign")
 async def project_assign(pid: int, req: AssignReq, u=Depends(current_user)):
     contractor_only(u)
-    notify = []
+    to_notify = []
     with db() as c:
         p = project_party(c, pid, u)
         if p["contractor_id"] != u["id"] or p["status"] not in ("accepted", "in_progress"):
@@ -483,9 +499,9 @@ async def project_assign(pid: int, req: AssignReq, u=Depends(current_user)):
                 raise HTTPException(400, f"Crew member {cid} is not an active member of your crew")
             c.execute("INSERT OR REPLACE INTO project_crew(project_id,crew_id,daily_rate) VALUES(?,?,?)", (pid, cid, m["daily_rate"]))
             if m["worker_id"]:
-                notify.append(m["worker_id"])
-    for wid in notify:
-        await hub.to_user(wid, {"type": "crew_assigned", "project_id": pid, "title": p["title"], "start_date": p["start_date"]})
+                to_notify.append(m["worker_id"])
+    for wid in to_notify:
+        await notify(wid, {"type": "crew_assigned", "project_id": pid, "title": p["title"], "start_date": p["start_date"]})
     return {"ok": True, "assigned": len(req.crew_ids)}
 
 class AttReq(BaseModel):

@@ -364,7 +364,17 @@ export default function CustomerPost({ token, meta, lang, refreshTrigger, onOpen
                           <button
                             type="button"
                             style={{ padding: '6px 12px', fontSize: '13px' }}
-                            onClick={() => onOpenBooking && onOpenBooking(w)}
+                            onClick={() => onOpenBooking && onOpenBooking(w, {
+                              job_id: j.id,
+                              skill: j.skill,
+                              address: j.address,
+                              start_date: j.start_date,
+                              days: j.days,
+                              budget: j.budget,
+                              lat: j.lat,
+                              lng: j.lng,
+                              rate: w.quoted || w.daily_rate
+                            })}
                           >
                             {t('book')}
                           </button>

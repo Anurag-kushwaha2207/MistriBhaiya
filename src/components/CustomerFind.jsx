@@ -23,7 +23,7 @@ export default function CustomerFind({ token, meta, lang, onOpenBooking, onStart
       if (skill) q.set('skill', skill);
       if (radius) q.set('radius_km', radius);
       if (freeOnly) q.set('free_only', 'true');
-      if (date) q.set('date', date);
+      if (date) q.set('on_date', date);
       if (sort) q.set('sort', sort);
       const effectiveLat = cityCoords?.lat ?? loc?.lat;
       const effectiveLng = cityCoords?.lng ?? loc?.lng;
@@ -61,7 +61,7 @@ export default function CustomerFind({ token, meta, lang, onOpenBooking, onStart
           border: '1px solid #ffb300',
           cursor: 'pointer'
         }}
-        onClick={onStartInstant}
+        onClick={() => onStartInstant && onStartInstant(skill)}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ fontSize: '30px' }}>⚡</div>
@@ -230,7 +230,7 @@ export default function CustomerFind({ token, meta, lang, onOpenBooking, onStart
                 <button
                   type="button"
                   style={{ padding: '8px 14px' }}
-                  onClick={() => onOpenBooking(w)}
+                  onClick={() => onOpenBooking && onOpenBooking(w, { skill: skill || '' })}
                 >
                   {t('book')}
                 </button>

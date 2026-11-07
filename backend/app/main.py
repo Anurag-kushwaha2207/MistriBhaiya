@@ -13,7 +13,7 @@ from . import config, firebase_sync
 from .calls import connect_call
 from .db import db, init_db
 from .geo import bbox, haversine_km
-from .realtime import hub
+from .realtime import hub, notify
 from .security import (current_user, hash_otp, make_token, new_otp, norm_phone, rate_limit, read_token, hash_password, verify_password)
 from .sms import send_otp_sms
 from .common import *   # shared helpers (SKILLS, effective_status, get_booking, ...)
@@ -68,7 +68,7 @@ class VerifyReq(BaseModel):
 
 class MeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=60)
-    lang: Optional[str] = Field(None, pattern="^(hi|en)$")
+    lang: Optional[str] = Field(None, pattern="^(hi|en|mr|gu|bn|ta|te|bho)$")
     avatar: Optional[str] = None
 
 class ProfileUpdate(BaseModel):
@@ -264,10 +264,16 @@ def verify(req: VerifyReq):
                             (phone, req.name.strip()[:60], req.role, pw_hash, 1 if phone in config.ADMIN_PHONES else 0, time.time()))
             uid = cur.lastrowid
             if req.role == "worker":
+                if req.lat is None or req.lng is None:
+                    raise HTTPException(400, "Location (lat, lng) is required for worker registration")
+                check_latlng(req.lat, req.lng)
                 skills_str = ",".join(req.skills) if req.skills else ""
                 c.execute("INSERT INTO worker_profiles(user_id,skills,daily_rate,experience_years,village,lat,lng,radius_km) VALUES(?,?,?,?,?,?,?,?)",
                           (uid, skills_str, req.daily_rate or 0, req.experience_years or 0, req.village or "", req.lat, req.lng, req.radius_km or config.DEFAULT_RADIUS_KM))
             if req.role == "contractor":
+                if req.lat is None or req.lng is None:
+                    raise HTTPException(400, "Location (lat, lng) is required for contractor registration")
+                check_latlng(req.lat, req.lng)
                 skills_str = ",".join(req.skills) if req.skills else ""
                 c.execute("INSERT INTO contractor_profiles(user_id,company,skills,village,lat,lng,radius_km,min_budget,experience_years,about) VALUES(?,?,?,?,?,?,?,?,?,?)",
                           (uid, req.company or "", skills_str, req.village or "", req.lat, req.lng, req.radius_km or 25, req.min_budget or 0, req.experience_years or 0, req.about or ""))
@@ -344,8 +350,10 @@ async def worker_profile(req: ProfileUpdate, u=Depends(current_user)):
         raise HTTPException(400, "Choose at least one valid skill")
     with db() as c:
         wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
-        new_lat = req.lat if req.lat is not None else (wp["lat"] if wp and wp["lat"] is not None else 26.4505)
-        new_lng = req.lng if req.lng is not None else (wp["lng"] if wp and wp["lng"] is not None else 80.1912)
+        new_lat = req.lat if req.lat is not None else (wp["lat"] if wp and wp["lat"] is not None else None)
+        new_lng = req.lng if req.lng is not None else (wp["lng"] if wp and wp["lng"] is not None else None)
+        if new_lat is None or new_lng is None:
+            raise HTTPException(400, "Location (lat, lng) is required for worker profile")
         check_latlng(new_lat, new_lng)
         c.execute("UPDATE worker_profiles SET skills=?,daily_rate=?,experience_years=?,village=?,lat=?,lng=?,radius_km=? WHERE user_id=?",
                   (",".join(skills), req.daily_rate, req.experience_years, req.village.strip(), new_lat, new_lng,
@@ -376,8 +384,10 @@ async def worker_status(req: StatusReq, u=Depends(current_user)):
         wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
         st = wp["status"] if wp else "offline"
         if req.status:
-            if wp["lat"] is None:
-                raise HTTPException(400, "Set your profile and location first")
+            cur_lat = wp["lat"] if wp else None
+            cur_lng = wp["lng"] if wp else None
+            if req.status == "free" and (cur_lat is None or cur_lng is None):
+                raise HTTPException(400, "Location is required to set status to free")
             free_until = now + (req.hours or config.FREE_DEFAULT_HOURS) * 3600 if req.status == "free" else 0
             c.execute("UPDATE worker_profiles SET status=?,free_until=?,status_updated=? WHERE user_id=?",
                       (req.status, free_until, now, u["id"]))
@@ -406,9 +416,13 @@ def nearby_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, 
                              "ORDER BY j.created_at DESC LIMIT 200", (la0, la1, ln0, ln1)).fetchall()
         
         if not nearby_rows:
-            rows = c.execute("SELECT j.*,u.name AS customer_name,u.phone AS customer_phone FROM jobs j JOIN users u ON u.id=j.customer_id "
-                             "WHERE j.status='open' ORDER BY j.created_at DESC LIMIT 200").fetchall()
-            using_fallback = True
+            if all_areas:
+                rows = c.execute("SELECT j.*,u.name AS customer_name,u.phone AS customer_phone FROM jobs j JOIN users u ON u.id=j.customer_id "
+                                 "WHERE j.status='open' ORDER BY j.created_at DESC LIMIT 200").fetchall()
+                using_fallback = True
+            else:
+                rows = []
+                using_fallback = False
         else:
             rows = nearby_rows
             using_fallback = False
@@ -436,12 +450,26 @@ def nearby_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, 
 @app.get("/api/workers")
 @app.get("/api/workers/search")
 def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = config.DEFAULT_RADIUS_KM, skill: str = "",
-                   free_only: bool = False, on_date: str = "", sort: str = "smart", limit: int = Query(50, le=200),
-                   respect_worker_radius: bool = True, u=Depends(current_user)):
-    w_lat = lat if lat is not None else 26.4505
-    w_lng = lng if lng is not None else 80.1912
+                   free_only: bool = False, on_date: str = "", date: str = "", sort: str = "smart", limit: int = Query(50, le=200),
+                   respect_worker_radius: bool = True, expand: bool = False, u=Depends(current_user)):
+    target_date = on_date or date
+    w_lat = lat
+    w_lng = lng
+    if w_lat is None or w_lng is None:
+        with db() as c:
+            if u["role"] == "worker":
+                p = c.execute("SELECT lat, lng FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
+            elif u["role"] == "contractor":
+                p = c.execute("SELECT lat, lng FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
+            else:
+                p = c.execute("SELECT lat, lng FROM jobs WHERE customer_id=? AND lat IS NOT NULL ORDER BY id DESC LIMIT 1", (u["id"],)).fetchone()
+            if p and p["lat"] is not None and p["lng"] is not None:
+                w_lat, w_lng = p["lat"], p["lng"]
+            else:
+                raise HTTPException(400, "Location required to search workers")
+    check_latlng(w_lat, w_lng)
     r = clamp_radius(radius_km)
-    d0 = pdate(on_date) if on_date else today()
+    d0 = pdate(target_date) if target_date else today()
     now = time.time()
     la0, la1, ln0, ln1 = bbox(w_lat, w_lng, r)
     sql = ("SELECT u.id,u.name,u.phone,wp.* FROM users u JOIN worker_profiles wp ON wp.user_id=u.id "
@@ -459,7 +487,7 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
     with db() as c:
         if lat is not None and lng is not None:
             rows = c.execute(sql, args).fetchall()
-            if not rows:
+            if not rows and expand:
                 rows = c.execute(base_sql, base_args).fetchall()
         else:
             rows = c.execute(base_sql, base_args).fetchall()
@@ -476,8 +504,8 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
         pub["phone"] = w["phone"] if "phone" in w.keys() else ""
         out.append(pub)
 
-    # Graceful fallback: if no workers within strict radius, return all matching workers
-    if not out and rows:
+    # Graceful fallback: if no workers within strict radius, return all matching workers ONLY IF expand=True
+    if not out and rows and expand:
         for w in rows:
             st = effective_status(w, ranges[w["id"]], d0, now)
             if free_only and st != "free":
@@ -485,6 +513,7 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
             d = haversine_km(w_lat, w_lng, w["lat"], w["lng"]) if (w["lat"] is not None and w["lng"] is not None) else None
             pub = worker_public(w, w, st, d)
             pub["phone"] = w["phone"] if "phone" in w.keys() else ""
+            pub["outside_radius"] = True
             out.append(pub)
     order = {"free": 0, "busy": 1, "offline": 2}
     if sort == "rating":
@@ -509,10 +538,11 @@ async def create_job(req: JobReq, u=Depends(current_user)):
     if lat is None or lng is None or lat == 0:
         with db() as c:
             prev = c.execute("SELECT lat, lng FROM jobs WHERE customer_id=? AND lat IS NOT NULL ORDER BY id DESC LIMIT 1", (u["id"],)).fetchone()
-            if prev and prev["lat"]:
+            if prev and prev["lat"] is not None and prev["lng"] is not None:
                 lat, lng = prev["lat"], prev["lng"]
             else:
-                lat, lng = 26.4505, 80.1912
+                raise HTTPException(400, "Location (lat, lng) is required to post a job")
+    check_latlng(lat, lng)
 
     start_date = req.start_date if req.start_date else today().isoformat()
     try:
@@ -530,20 +560,51 @@ async def create_job(req: JobReq, u=Depends(current_user)):
                         (u["id"], req.skill, req.description, lat, lng, req.address, start_date, days, budget, now))
         jid = cur.lastrowid
         job_row = c.execute("SELECT j.*,u.name AS customer_name FROM jobs j JOIN users u ON u.id=j.customer_id WHERE j.id=?", (jid,)).fetchone()
+        workers = c.execute("SELECT user_id, lat, lng, radius_km FROM worker_profiles WHERE lat IS NOT NULL AND lng IS NOT NULL AND (',' || skills || ',') LIKE ?",
+                            (f"%,{req.skill},%",)).fetchall()
+        contractors = c.execute("SELECT user_id, lat, lng, radius_km FROM contractor_profiles WHERE lat IS NOT NULL AND lng IS NOT NULL AND (',' || skills || ',') LIKE ?",
+                                (f"%,{req.skill},%",)).fetchall()
 
     firebase_sync.sync_job(jid)
 
-    # Real-time WebSocket broadcast to all workers
-    await hub.broadcast({
-        "type": "job_new",
-        "job_id": jid,
-        "skill": req.skill,
-        "customer": u["name"] or "Customer",
-        "description": req.description,
-        "budget": budget,
-        "lat": lat,
-        "lng": lng
-    })
+    # Targeted notifications (A7): workers and contractors with skill within radius
+    job_radius = 50.0
+    for w in workers:
+        if w["user_id"] == u["id"]:
+            continue
+        d = haversine_km(lat, lng, w["lat"], w["lng"])
+        max_d = min(job_radius, w["radius_km"] or config.DEFAULT_RADIUS_KM)
+        if d <= max_d:
+            await notify(w["user_id"], {
+                "type": "job_new",
+                "job_id": jid,
+                "skill": req.skill,
+                "customer": u["name"] or "Customer",
+                "description": req.description,
+                "budget": budget,
+                "lat": lat,
+                "lng": lng,
+                "distance_km": round(d, 1)
+            })
+
+    for cp in contractors:
+        if cp["user_id"] == u["id"]:
+            continue
+        d = haversine_km(lat, lng, cp["lat"], cp["lng"])
+        max_d = min(job_radius, cp["radius_km"] or 25.0)
+        if d <= max_d:
+            await notify(cp["user_id"], {
+                "type": "job_new",
+                "job_id": jid,
+                "skill": req.skill,
+                "customer": u["name"] or "Customer",
+                "description": req.description,
+                "budget": budget,
+                "lat": lat,
+                "lng": lng,
+                "distance_km": round(d, 1)
+            })
+
     return {"id": jid, "job": dict(job_row) if job_row else {"id": jid}}
 
 @app.get("/api/jobs/mine")
@@ -568,7 +629,7 @@ async def job_interest(job_id: int, req: Optional[InterestReq] = None, u=Depends
         wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
         quote = (req.rate if req and req.rate else (wp["daily_rate"] if wp and wp["daily_rate"] else 500))
         c.execute("INSERT OR REPLACE INTO job_interests(job_id,worker_id,created_at,rate) VALUES(?,?,?,?)", (job_id, u["id"], time.time(), quote))
-    await hub.to_user(j["customer_id"], {"type": "job_interest", "job_id": job_id, "worker": u["name"] or "Mistri", "worker_id": u["id"], "rate": quote})
+    await notify(j["customer_id"], {"type": "job_interest", "job_id": job_id, "worker": u["name"] or "Mistri", "worker_id": u["id"], "rate": quote})
     return {"ok": True}
 
 @app.get("/api/jobs/{job_id}/interested")
@@ -618,9 +679,28 @@ async def create_booking(req: BookingReq, u=Depends(current_user)):
         w = c.execute("SELECT u.id,u.name,wp.* FROM users u JOIN worker_profiles wp ON wp.user_id=u.id WHERE u.id=?", (req.worker_id,)).fetchone()
         if not w:
             raise HTTPException(404, "Worker not found")
+        worker_skills = [s.strip() for s in (w["skills"] or "").split(",") if s.strip()]
+        if req.skill not in worker_skills:
+            raise HTTPException(400, f"Worker does not provide skill '{req.skill}'")
         if overlaps(busy_ranges(c, [w["id"]])[w["id"]], start, req.days):
             raise HTTPException(409, "Worker is already booked for these dates")
         now = time.time()
+        if start == today():
+            st = effective_status(w, busy_ranges(c, [w["id"]])[w["id"]], today(), now)
+            if st == "busy":
+                raise HTTPException(409, "Worker is currently busy")
+            if st == "offline" and not hub.is_online(w["id"]):
+                raise HTTPException(400, "Worker is offline today")
+
+        # Check radius if coordinates available
+        req_lat = req.lat
+        req_lng = req.lng
+        if req_lat is not None and req_lng is not None and w["lat"] is not None and w["lng"] is not None:
+            dist = haversine_km(req_lat, req_lng, w["lat"], w["lng"])
+            max_r = w["radius_km"] or config.DEFAULT_RADIUS_KM
+            if dist > max_r:
+                raise HTTPException(400, f"Worker only works within {max_r} km (distance is {round(dist, 1)} km)")
+
         first_rate = req.agreed_rate or w["daily_rate"]
         cur = c.execute("INSERT INTO bookings(job_id,customer_id,worker_id,skill,note,address,lat,lng,start_date,days,agreed_rate,created_at,updated_at) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -629,9 +709,12 @@ async def create_booking(req: BookingReq, u=Depends(current_user)):
         bid = cur.lastrowid
         c.execute("UPDATE bookings SET offer_by=?, offer_rounds=1 WHERE id=?", (u["id"], bid))
         c.execute("INSERT INTO offers(kind,ref_id,from_id,rate,days,note,created_at) VALUES('booking',?,?,?,?,?,?)", (bid, u["id"], first_rate, req.days, "", now))
+        booking_row = dict(c.execute("SELECT * FROM bookings WHERE id=?", (bid,)).fetchone())
+        booking_row["worker_name"] = w["name"] or "मिस्त्री"
+        booking_row["customer_name"] = u["name"] or "ग्राहक"
     firebase_sync.sync_booking(bid)
-    await hub.to_user(w["id"], {"type": "booking_new", "booking_id": bid, "customer": u["name"] or "Customer", "skill": req.skill})
-    return {"id": bid}
+    await notify(w["id"], {"type": "booking_new", "booking_id": bid, "customer": u["name"] or "Customer", "skill": req.skill})
+    return {"id": bid, "booking": booking_row}
 
 @app.get("/api/bookings/mine")
 @app.get("/api/bookings")
@@ -679,6 +762,7 @@ def my_bookings(u=Depends(current_user)):
 @app.post("/api/bookings/{bid}/respond")
 async def respond(bid: int, req: RespondReq, u=Depends(current_user)):
     need_role(u, "worker")
+    rejected_workers = []
     with db() as c:
         b = get_booking(c, bid, u)
         if b["worker_id"] != u["id"] or b["status"] != "requested":
@@ -692,12 +776,19 @@ async def respond(bid: int, req: RespondReq, u=Depends(current_user)):
             c.execute("UPDATE bookings SET start_otp=? WHERE id=?", (f"{secrets.randbelow(9000) + 1000}", bid))
             if b["job_id"]:
                 c.execute("UPDATE jobs SET status='assigned' WHERE id=?", (b["job_id"],))
+                pending = c.execute("SELECT id, worker_id FROM bookings WHERE job_id=? AND id!=? AND status='requested'", (b["job_id"], bid)).fetchall()
+                for op in pending:
+                    set_booking(c, op["id"], "rejected")
+                    rejected_workers.append((op["id"], op["worker_id"]))
         else:
             set_booking(c, bid, "rejected")
         await push_worker_status(c, u["id"])
     firebase_sync.sync_booking(bid)
     firebase_sync.sync_worker_profile(u["id"])
-    await hub.to_user(b["customer_id"], {"type": "booking_update", "booking_id": bid, "status": "accepted" if req.accept else "rejected"})
+    for op_id, op_wid in rejected_workers:
+        firebase_sync.sync_booking(op_id)
+        await notify(op_wid, {"type": "booking_update", "booking_id": op_id, "status": "rejected", "reason": "job_assigned"})
+    await notify(b["customer_id"], {"type": "booking_update", "booking_id": bid, "status": "accepted" if req.accept else "rejected"})
     return {"ok": True}
 
 @app.post("/api/bookings/{bid}/complete")
@@ -715,7 +806,7 @@ async def complete(bid: int, u=Depends(current_user)):
     firebase_sync.sync_booking(bid)
     firebase_sync.sync_worker_profile(b["worker_id"])
     other = b["worker_id"] if u["id"] == b["customer_id"] else b["customer_id"]
-    await hub.to_user(other, {"type": "booking_update", "booking_id": bid, "status": "completed"})
+    await notify(other, {"type": "booking_update", "booking_id": bid, "status": "completed"})
     return {"ok": True}
 
 @app.post("/api/bookings/{bid}/cancel")
@@ -729,7 +820,7 @@ async def cancel(bid: int, u=Depends(current_user)):
     firebase_sync.sync_booking(bid)
     firebase_sync.sync_worker_profile(b["worker_id"])
     other = b["worker_id"] if u["id"] == b["customer_id"] else b["customer_id"]
-    await hub.to_user(other, {"type": "booking_update", "booking_id": bid, "status": "cancelled"})
+    await notify(other, {"type": "booking_update", "booking_id": bid, "status": "cancelled"})
     return {"ok": True}
 
 class BookingStatusReq(BaseModel):
@@ -805,7 +896,7 @@ async def start_work(bid: int, req: StartReq, u=Depends(current_user)):
             raise HTTPException(400, "Wrong OTP")
         c.execute("UPDATE bookings SET started_at=?, updated_at=? WHERE id=?", (time.time(), time.time(), bid))
     firebase_sync.sync_booking(bid)
-    await hub.to_user(b["customer_id"], {"type": "booking_update", "booking_id": bid, "status": "started"})
+    await notify(b["customer_id"], {"type": "booking_update", "booking_id": bid, "status": "started"})
     return {"ok": True}
 
 # ---------------------------------------------------------------- instant dispatch (Rapido-style "need a mistri NOW")
@@ -819,23 +910,46 @@ class InstantReq(BaseModel):
     address: str = Field("", max_length=200)
 
 def instant_candidates(c, q, exclude):
+    import logging
+    logger = logging.getLogger("instant")
     r = q["radius_km"]
     la0, la1, ln0, ln1 = bbox(q["lat"], q["lng"], r)
     rows = c.execute("SELECT u.id,u.name,wp.* FROM users u JOIN worker_profiles wp ON wp.user_id=u.id "
-                     "WHERE wp.lat BETWEEN ? AND ? AND wp.lng BETWEEN ? AND ? AND (',' || wp.skills || ',') LIKE ?",
+                     "WHERE wp.lat IS NOT NULL AND wp.lng IS NOT NULL AND wp.lat BETWEEN ? AND ? AND wp.lng BETWEEN ? AND ? AND (',' || wp.skills || ',') LIKE ?",
                      (la0, la1, ln0, ln1, f"%,{q['skill']},%")).fetchall()
     ranges = busy_ranges(c, [x["id"] for x in rows])
     now, start, out = time.time(), today(), []
+    skipped = {"excluded": 0, "radius": 0, "overlaps": 0, "busy": 0, "offline_inactive": 0}
     for w in rows:
-        if w["id"] in exclude:
+        wid = w["id"]
+        if wid in exclude:
+            skipped["excluded"] += 1
             continue
         d = haversine_km(q["lat"], q["lng"], w["lat"], w["lng"])
-        if d > r or d > w["radius_km"] or overlaps(ranges[w["id"]], start, q["days"]):
+        if d > r or d > (w["radius_km"] or 25):
+            skipped["radius"] += 1
             continue
-        if effective_status(w, ranges[w["id"]], start, now) != "free":
+        if overlaps(ranges[wid], start, q["days"]):
+            skipped["overlaps"] += 1
             continue
-        out.append((d, w))
+        st = effective_status(w, ranges[wid], start, now)
+        if st == "busy":
+            skipped["busy"] += 1
+            continue
+        if st == "free":
+            out.append((d, w))
+        elif st == "offline":
+            recent_login = bool(w["status_updated"] and (now - w["status_updated"] < 86400))
+            if hub.is_online(wid) or recent_login:
+                out.append((d, w))
+            else:
+                skipped["offline_inactive"] += 1
+        else:
+            skipped["busy"] += 1
+
     out.sort(key=lambda x: (x[0], -(x[1]["rating_avg"] or 0)))      # nearest first, better rated wins ties
+    rid_label = q["id"] if (q and hasattr(q, "keys") and "id" in q.keys()) else "unknown"
+    logger.info(f"instant_candidates for request {rid_label}: found {len(out)} candidates, skipped: {skipped}")
     return out
 
 async def dispatch_wave(c, rid, wave):
@@ -851,12 +965,12 @@ async def dispatch_wave(c, rid, wave):
         pending = c.execute("SELECT COUNT(*) FROM instant_offers WHERE request_id=? AND status='sent'", (rid,)).fetchone()[0]
         if wave == 1 or pending == 0:
             c.execute("UPDATE instant_requests SET status='no_worker' WHERE id=?", (rid,))
-            await hub.to_user(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "no_worker"})
+            await notify(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "no_worker"}, c=c)
         return 0
     for d, w in cands:
-        await hub.to_user(w["id"], {"type": "instant_offer", "request_id": rid, "skill": q["skill"], "distance_km": round(d, 1),
-                                    "days": q["days"], "note": q["note"], "rate": w["daily_rate"], "seconds": config.INSTANT_WAVE_SECONDS})
-    await hub.to_user(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "searching", "wave": wave, "offered": len(cands)})
+        await notify(w["id"], {"type": "instant_offer", "request_id": rid, "skill": q["skill"], "distance_km": round(d, 1),
+                               "days": q["days"], "note": q["note"], "rate": w["daily_rate"], "seconds": config.INSTANT_WAVE_SECONDS}, c=c)
+    await notify(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "searching", "wave": wave, "offered": len(cands)}, c=c)
     return len(cands)
 
 async def advance_instant(c, rid):
@@ -869,7 +983,7 @@ async def advance_instant(c, rid):
         c.execute("UPDATE instant_offers SET status='expired' WHERE request_id=? AND status='sent'", (rid,))
         if q["wave"] >= config.INSTANT_MAX_WAVES:
             c.execute("UPDATE instant_requests SET status='no_worker' WHERE id=?", (rid,))
-            await hub.to_user(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "no_worker"})
+            await notify(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "no_worker"}, c=c)
         else:
             await dispatch_wave(c, rid, q["wave"] + 1)
     return c.execute("SELECT * FROM instant_requests WHERE id=?", (rid,)).fetchone()
@@ -948,9 +1062,9 @@ async def instant_accept(rid: int, u=Depends(current_user)):
         pub = worker_public(u, wp, "busy", d)
     firebase_sync.sync_booking(bid)
     firebase_sync.sync_worker_profile(u["id"])
-    await hub.to_user(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "matched", "booking_id": bid, "worker": pub})
+    await notify(q["customer_id"], {"type": "instant_status", "request_id": rid, "status": "matched", "booking_id": bid, "worker": pub})
     for oid in others:
-        await hub.to_user(oid, {"type": "instant_closed", "request_id": rid})
+        await notify(oid, {"type": "instant_closed", "request_id": rid})
     return {"booking_id": bid}
 
 @app.post("/api/instant/{rid}/decline")
@@ -972,7 +1086,8 @@ async def instant_cancel(rid: int, u=Depends(current_user)):
         ids = [r["worker_id"] for r in c.execute("SELECT worker_id FROM instant_offers WHERE request_id=? AND status='sent'", (rid,))]
         c.execute("UPDATE instant_offers SET status='closed' WHERE request_id=? AND status='sent'", (rid,))
     for oid in ids:
-        await hub.to_user(oid, {"type": "instant_closed", "request_id": rid})
+        await notify(oid, {"type": "instant_closed", "request_id": rid})
+    await notify(u["id"], {"type": "instant_status", "request_id": rid, "status": "cancelled"})
     return {"ok": True}
 
 # ---------------------------------------------------------------- safety: SOS + reports
@@ -998,9 +1113,9 @@ async def sos(req: SosReq, u=Depends(current_user)):
                   (u["id"], req.booking_id, req.lat, req.lng, time.time()))
         admins = [r["id"] for r in c.execute("SELECT id FROM users WHERE is_admin=1")]
     for aid in admins:
-        await hub.to_user(aid, {"type": "sos_admin", "user": u["name"] or u["phone"], "booking_id": req.booking_id})
+        await notify(aid, {"type": "sos_admin", "user": u["name"] or u["phone"], "booking_id": req.booking_id})
     if other:
-        await hub.to_user(other, {"type": "sos", "booking_id": req.booking_id})
+        await notify(other, {"type": "sos", "booking_id": req.booking_id})
     return {"ok": True, "emergency_number": "112"}
 
 @app.post("/api/reports")
@@ -1121,6 +1236,39 @@ async def relay_rtc(ws, uid, msg):
     })
     if sent == 0 and data.get("kind") == "offer":
         await ws.send_json({"type": "rtc_unavailable", "booking_id": bid, "target_user_id": other})
+
+class ReadNotifReq(BaseModel):
+    id: Optional[int] = None
+
+@app.get("/api/notifications")
+def get_notifications(limit: int = 50, u=Depends(current_user)):
+    with db() as c:
+        rows = c.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?", (u["id"], limit)).fetchall()
+        unread = c.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND read=0", (u["id"],)).fetchone()[0]
+    out = []
+    for r in rows:
+        payload = {}
+        try:
+            payload = json.loads(r["payload_json"])
+        except Exception:
+            pass
+        out.append({
+            "id": r["id"],
+            "type": r["type"],
+            "payload": payload,
+            "created_at": r["created_at"],
+            "read": bool(r["read"])
+        })
+    return {"notifications": out, "unread_count": unread}
+
+@app.post("/api/notifications/read")
+def read_notifications(req: Optional[ReadNotifReq] = None, u=Depends(current_user)):
+    with db() as c:
+        if req and req.id:
+            c.execute("UPDATE notifications SET read=1 WHERE id=? AND user_id=?", (req.id, u["id"]))
+        else:
+            c.execute("UPDATE notifications SET read=1 WHERE user_id=?", (u["id"],))
+    return {"ok": True}
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket, token: str = ""):

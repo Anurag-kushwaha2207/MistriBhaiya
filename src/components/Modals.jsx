@@ -2,12 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { api, getLoc } from '../api';
 import { syncBooking } from '../firebase';
 
-export function BookingModal({ worker, token, onClose, onSuccess, showToast, t }) {
-  const [date, setDate] = useState('');
-  const [days, setDays] = useState(1);
-  const [rate, setRate] = useState(worker?.daily_rate || 0);
-  const [address, setAddress] = useState('');
-  const [note, setNote] = useState('');
+export function BookingModal({ worker, jobContext = {}, token, onClose, onSuccess, showToast, t }) {
+  const workerSkills = Array.isArray(worker?.skills)
+    ? worker.skills
+    : (worker?.skills ? worker.skills.split(',').map(s => s.trim()).filter(Boolean) : []);
+  
+  const defaultSkill = (jobContext?.skill && workerSkills.includes(jobContext.skill))
+    ? jobContext.skill
+    : (workerSkills[0] || 'rajmistri');
+
+  const [selectedSkill, setSelectedSkill] = useState(defaultSkill);
+  const [date, setDate] = useState(jobContext?.start_date || '');
+  const [days, setDays] = useState(jobContext?.days || 1);
+  const [rate, setRate] = useState(jobContext?.rate || worker?.daily_rate || 0);
+  const [address, setAddress] = useState(jobContext?.address || '');
+  const [note, setNote] = useState(jobContext?.description || '');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -18,20 +27,25 @@ export function BookingModal({ worker, token, onClose, onSuccess, showToast, t }
       try { loc = await getLoc(false); } catch (e) {}
 
       const todayStr = new Date().toISOString().split('T')[0];
-      const primarySkill = Array.isArray(worker.skills) ? worker.skills[0] : (worker.skills || '').split(',')[0] || 'mistri';
+      const effLat = jobContext?.lat ?? loc?.lat;
+      const effLng = jobContext?.lng ?? loc?.lng;
+
       const payload = {
         worker_id: worker.id,
-        skill: primarySkill,
+        skill: selectedSkill,
+        job_id: jobContext?.job_id || null,
         start_date: date || todayStr,
         days: parseInt(days, 10) || 1,
         agreed_rate: parseInt(rate, 10) || worker.daily_rate || 0,
         address: address || '',
         note: note || '',
-        ...(loc ? { lat: loc.lat, lng: loc.lng } : {})
+        ...(effLat != null && effLng != null ? { lat: effLat, lng: effLng } : {})
       };
 
       const res = await api('/bookings', 'POST', payload, token);
-      syncBooking(res.booking);
+      if (res.booking) {
+        syncBooking(res.booking);
+      }
       showToast(t('sent'));
       onSuccess();
       onClose();
@@ -51,6 +65,21 @@ export function BookingModal({ worker, token, onClose, onSuccess, showToast, t }
         </div>
 
         <form onSubmit={handleSubmit}>
+          {workerSkills.length > 1 ? (
+            <div>
+              <label>{t('skills')}</label>
+              <select value={selectedSkill} onChange={(e) => setSelectedSkill(e.target.value)}>
+                {workerSkills.map((sk) => (
+                  <option key={sk} value={sk}>{sk}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div style={{ marginBottom: '10px' }}>
+              <span className="chip active">🛠️ {selectedSkill}</span>
+            </div>
+          )}
+
           <label>{t('rate')}</label>
           <input
             type="number"

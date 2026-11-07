@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api, getLoc } from '../api';
+import { api, getLoc, setLocCache } from '../api';
 import { syncUser, syncWorkerProfile, syncContractorProfile } from '../firebase';
 import { CITIES, getCityNameFromCoords } from './ProfileModal';
 
@@ -46,8 +46,8 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
   const [radius, setRadius] = useState(10);
   const [company, setCompany] = useState('');
   const [minBudget, setMinBudget] = useState('15000');
-  const [regLat, setRegLat] = useState(28.6139); // Delhi default
-  const [regLng, setRegLng] = useState(77.2090);
+  const [regLat, setRegLat] = useState(null);
+  const [regLng, setRegLng] = useState(null);
 
   const cleanPhone = phone.trim().replace(/\D/g, '').slice(-10);
 
@@ -64,6 +64,7 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     if (found) {
       setRegLat(found.lat);
       setRegLng(found.lng);
+      setLocCache({ lat: found.lat, lng: found.lng });
       showToast(`📍 लोकेशन सेट: ${found.name}`);
     }
   };
@@ -74,6 +75,7 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
       const loc = await getLoc(true);
       setRegLat(loc.lat);
       setRegLng(loc.lng);
+      setLocCache(loc);
       const name = getCityNameFromCoords(loc.lat, loc.lng);
       showToast(`📍 सटीक GPS लोकेशन मिली: ${name}`);
     } catch (e) {
@@ -169,6 +171,10 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     }
     if (role === 'worker' && selectedSkills.length === 0) {
       showToast('कृपया कम से कम एक काम / हुनर चुनें');
+      return;
+    }
+    if ((role === 'worker' || role === 'contractor') && (regLat == null || regLng == null)) {
+      showToast('कृपया GPS ऑन करें या अपना शहर / लोकेशन चुनें (Location is required)');
       return;
     }
 

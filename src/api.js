@@ -48,10 +48,27 @@ export async function api(path, method = "GET", body = null, token = null, onAut
   return data;
 }
 
+const LOC_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+export function clearLocCache() {
+  localStorage.removeItem("ks_loc");
+  localStorage.removeItem("ks_loc_ts");
+}
+
+export function setLocCache(loc) {
+  if (loc && loc.lat != null && loc.lng != null) {
+    localStorage.setItem("ks_loc", JSON.stringify({ lat: loc.lat, lng: loc.lng }));
+    localStorage.setItem("ks_loc_ts", Date.now().toString());
+  }
+}
+
 export function getLoc(force = false) {
   return new Promise((res, rej) => {
     const cached = localStorage.getItem("ks_loc");
-    if (cached && !force) {
+    const cachedTs = parseInt(localStorage.getItem("ks_loc_ts") || "0", 10);
+    const isFresh = cached && (Date.now() - cachedTs < LOC_TTL_MS);
+
+    if (isFresh && !force) {
       try { return res(JSON.parse(cached)); } catch (e) {}
     }
     if (!navigator.geolocation) {
@@ -60,7 +77,7 @@ export function getLoc(force = false) {
     navigator.geolocation.getCurrentPosition(
       p => {
         const loc = { lat: p.coords.latitude, lng: p.coords.longitude };
-        localStorage.setItem("ks_loc", JSON.stringify(loc));
+        setLocCache(loc);
         res(loc);
       },
       () => {
@@ -68,11 +85,11 @@ export function getLoc(force = false) {
         navigator.geolocation.getCurrentPosition(
           p2 => {
             const loc = { lat: p2.coords.latitude, lng: p2.coords.longitude };
-            localStorage.setItem("ks_loc", JSON.stringify(loc));
+            setLocCache(loc);
             res(loc);
           },
           () => {
-            if (cached) {
+            if (isFresh && cached) {
               try { return res(JSON.parse(cached)); } catch (e) {}
             }
             rej(new Error("कृपया GPS / लोकेशन ऑन करें और अनुमति दें"));

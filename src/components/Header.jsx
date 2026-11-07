@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Header({ lang, onToggleLang, user, onOpenProfile, t }) {
+export default function Header({ lang, onToggleLang, user, onOpenProfile, unreadNotifs = 0, onOpenNotifs, t }) {
   return (
     <header id="top">
       <span className="brand">🏗️ MistriBhaiya</span>
@@ -13,6 +13,45 @@ export default function Header({ lang, onToggleLang, user, onOpenProfile, t }) {
         >
           {lang === 'hi' ? 'EN' : 'हिं'}
         </button>
+        {user && (
+          <button
+            className="sec notif-btn"
+            id="notifb"
+            title="Notifications"
+            onClick={onOpenNotifs}
+            style={{
+              padding: '6px 10px',
+              marginRight: '6px',
+              position: 'relative',
+              borderRadius: '20px',
+              fontSize: '16px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+          >
+            🔔
+            {unreadNotifs > 0 && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '-4px',
+                  right: '-4px',
+                  background: '#d32f2f',
+                  color: '#fff',
+                  borderRadius: '10px',
+                  padding: '1px 5px',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  lineHeight: '1.2'
+                }}
+              >
+                {unreadNotifs > 9 ? '9+' : unreadNotifs}
+              </span>
+            )}
+          </button>
+        )}
         {user && (
           <button
             className="sec profile-btn"
