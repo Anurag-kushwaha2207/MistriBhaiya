@@ -137,6 +137,10 @@ export function BookingModal({ worker, jobContext = {}, token, onClose, onSucces
 export function ProjectModal({ contractor, token, onClose, onSuccess, showToast, t }) {
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
+  const [address, setAddress] = useState('');
+  const [skill, setSkill] = useState(() => (contractor?.skills && contractor.skills.length > 0 ? contractor.skills[0] : 'rajmistri'));
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [days, setDays] = useState(30);
   const [budget, setBudget] = useState(contractor?.min_budget || '');
   const [workersNeeded, setWorkersNeeded] = useState(2);
   const [loading, setLoading] = useState(false);
@@ -156,10 +160,12 @@ export function ProjectModal({ contractor, token, onClose, onSuccess, showToast,
         contractor_id: contractor.id,
         title,
         description: desc,
+        address,
+        skill,
         budget: parseInt(budget, 10) || 0,
         total_budget: parseInt(budget, 10) || 0,
-        start_date: new Date().toISOString().split('T')[0],
-        days: 30,
+        start_date: startDate,
+        days: parseInt(days, 10) || 1,
         workers_needed: parseInt(workersNeeded, 10) || 1,
         ...(loc ? { lat: loc.lat, lng: loc.lng } : {})
       };
@@ -198,11 +204,40 @@ export function ProjectModal({ contractor, token, onClose, onSuccess, showToast,
             rows="2"
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
+            placeholder="काम का विवरण"
+          />
+
+          <label>{t('address')}</label>
+          <input
+            type="text"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="साइट का पता / स्थान"
           />
 
           <div className="row">
             <div>
-              <label>{t('totalBudget')}</label>
+              <label>{t('date')}</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label>{t('days')}</label>
+              <input
+                type="number"
+                min="1"
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="row">
+            <div>
+              <label>{t('totalBudget')} (₹)</label>
               <input
                 type="number"
                 value={budget}
@@ -220,9 +255,9 @@ export function ProjectModal({ contractor, token, onClose, onSuccess, showToast,
             </div>
           </div>
 
-          <div style={{ marginTop: '14px' }}>
+          <div style={{ margin: '14px 0' }}>
             <button type="submit" className="big" disabled={loading}>
-              {loading ? 'भेज रहे हैं…' : `📤 ${t('sendProject')}`}
+              {loading ? 'भेज रहे हैं…' : `📤 ${t('send')}`}
             </button>
           </div>
         </form>

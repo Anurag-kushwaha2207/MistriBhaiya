@@ -1,4 +1,5 @@
 import asyncio, os, secrets, sys, threading, time
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -26,7 +27,27 @@ if not config.DEV_MODE and config.SECRET_KEY in DEFAULT_SECRET_KEYS:
     logger.critical("FATAL: In production (DEV_MODE=0), SECRET_KEY must be configured with a secure secret! Exiting.")
     sys.exit(1)
 
-app = FastAPI(title="MistriBaiya API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: sync SQLite with Firebase and run instant sweeper loop
+    firebase_sync.sync_all_from_db()
+    sweeper_running = True
+    async def loop():
+        while sweeper_running:
+            await asyncio.sleep(2)
+            try:
+                with db() as c:
+                    for r in c.execute("SELECT id FROM instant_requests WHERE status='searching'").fetchall():
+                        await advance_instant(c, r["id"])
+            except Exception as e:
+                logger.error("instant sweeper error: %s", e)
+    sweeper_task = asyncio.create_task(loop())
+    yield
+    # Shutdown
+    sweeper_running = False
+    sweeper_task.cancel()
+
+app = FastAPI(title="MistriBaiya API", version="0.1.0", lifespan=lifespan)
 
 # Enable CORS for Firebase Hosting and trusted origins
 DEFAULT_ALLOWED_ORIGINS = [
@@ -756,6 +777,8 @@ async def create_booking(req: BookingReq, u=Depends(current_user)):
 @app.get("/api/bookings/mine")
 @app.get("/api/bookings")
 def my_bookings(u=Depends(current_user)):
+    if u["role"] == "contractor":
+        return {"bookings": []}
     col = "worker_id" if u["role"] == "worker" else "customer_id"
     with db() as c:
         rows = c.execute(f"SELECT * FROM bookings WHERE {col}=? ORDER BY created_at DESC LIMIT 100", (u["id"],)).fetchall()
@@ -839,19 +862,31 @@ async def respond(bid: int, req: RespondReq, u=Depends(current_user)):
 async def complete(bid: int, u=Depends(current_user)):
     with db() as c:
         b = get_booking(c, bid, u)
-        if b["status"] != "accepted":
-            raise HTTPException(400, "Only accepted bookings can be completed")
+        if b["status"] not in ("accepted", "work_done"):
+            raise HTTPException(400, "Only accepted or work_done bookings can be completed")
         if config.REQUIRE_START_OTP and not b["started_at"]:
             raise HTTPException(400, "Start the work first (worker enters the customer's OTP)")
-        set_booking(c, bid, "completed")
-        if b["job_id"]:
-            c.execute("UPDATE jobs SET status='done' WHERE id=?", (b["job_id"],))
-        await push_worker_status(c, b["worker_id"])
+
+        if u["id"] == b["worker_id"]:
+            # Worker marks work done, awaiting customer confirmation
+            set_booking(c, bid, "work_done")
+            event_st = "work_done"
+            text_msg = "मिस्त्री ने काम पूरा चिह्नित किया है। कृपया पुष्टि करें।"
+        else:
+            # Customer confirms completion
+            set_booking(c, bid, "completed")
+            if b["job_id"]:
+                c.execute("UPDATE jobs SET status='done' WHERE id=?", (b["job_id"],))
+            await push_worker_status(c, b["worker_id"])
+            event_st = "completed"
+            text_msg = "ग्राहक ने काम पूरा होने की पुष्टि कर दी है।"
+
     firebase_sync.sync_booking(bid)
-    firebase_sync.sync_worker_profile(b["worker_id"])
+    if event_st == "completed":
+        firebase_sync.sync_worker_profile(b["worker_id"])
     other = b["worker_id"] if u["id"] == b["customer_id"] else b["customer_id"]
-    await notify(other, {"type": "booking_update", "booking_id": bid, "status": "completed"})
-    return {"ok": True}
+    await notify(other, {"type": "booking_update", "booking_id": bid, "status": event_st, "text": text_msg})
+    return {"ok": True, "status": event_st}
 
 @app.post("/api/bookings/{bid}/cancel")
 async def cancel(bid: int, u=Depends(current_user)):
@@ -1031,21 +1066,6 @@ async def advance_instant(c, rid):
         else:
             await dispatch_wave(c, rid, q["wave"] + 1)
     return c.execute("SELECT * FROM instant_requests WHERE id=?", (rid,)).fetchone()
-
-@app.on_event("startup")
-async def _instant_sweeper():
-    """Production loop: expire waves even if nobody polls, and sync initial DB records to Firebase."""
-    firebase_sync.sync_all_from_db()
-    async def loop():
-        while True:
-            await asyncio.sleep(2)
-            try:
-                with db() as c:
-                    for r in c.execute("SELECT id FROM instant_requests WHERE status='searching'").fetchall():
-                        await advance_instant(c, r["id"])
-            except Exception as e:
-                print("instant sweeper error:", e)
-    asyncio.create_task(loop())
 
 @app.post("/api/instant")
 @app.post("/api/instant/start")

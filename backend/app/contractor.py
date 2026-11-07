@@ -284,7 +284,14 @@ def crew_attendance(cid: int, req: CrewAttendanceReq, u=Depends(current_user)):
         own_crew(c, cid, u)
         t_str = today().isoformat()
         pid = req.project_id
-        if not pid:
+        if pid:
+            proj = c.execute("SELECT * FROM projects WHERE id=? AND contractor_id=?", (pid, u["id"])).fetchone()
+            if not proj:
+                raise HTTPException(404, "Project not found or not owned by you")
+            assigned = c.execute("SELECT 1 FROM project_crew WHERE project_id=? AND crew_id=?", (pid, cid)).fetchone()
+            if not assigned:
+                raise HTTPException(400, "Crew member is not assigned to this project")
+        else:
             prow = c.execute("SELECT pc.project_id FROM project_crew pc JOIN projects p ON p.id=pc.project_id WHERE pc.crew_id=? AND p.contractor_id=? AND p.status IN ('accepted','in_progress') ORDER BY p.id DESC", (cid, u["id"])).fetchone()
             pid = prow["project_id"] if prow else 0
         m = c.execute("SELECT daily_rate FROM crew_members WHERE id=?", (cid,)).fetchone()
@@ -294,7 +301,7 @@ def crew_attendance(cid: int, req: CrewAttendanceReq, u=Depends(current_user)):
     return {"ok": True}
 
 class CrewPaymentReq(BaseModel):
-    amount: int
+    amount: int = Field(..., gt=0, le=10_000_000)
     type: Optional[str] = "advance"
     kind: Optional[str] = None
     note: str = ""
@@ -302,9 +309,12 @@ class CrewPaymentReq(BaseModel):
 @router.post("/api/contractor/crew/{cid}/payment")
 def crew_payment(cid: int, req: CrewPaymentReq, u=Depends(current_user)):
     contractor_only(u)
+    ptype = (req.type or req.kind or "advance").lower().strip()
+    if ptype not in ("advance", "payment", "wage", "bonus"):
+        raise HTTPException(400, "Payment type must be advance, payment, wage, or bonus")
+    kind = "payment" if ptype in ("payment", "wage") else ("bonus" if ptype == "bonus" else "advance")
     with db() as c:
         own_crew(c, cid, u)
-        kind = "payment" if (req.type == "payment" or req.kind == "payment") else "advance"
         c.execute("INSERT INTO ledger(contractor_id,crew_id,project_id,kind,amount,note,created_at) VALUES(?,?,NULL,?,?,?,?)",
                   (u["id"], cid, kind, req.amount, req.note, time.time()))
     return {"ok": True}
@@ -450,18 +460,35 @@ async def project_set_status(pid: int, req: ProjectStatusReq, u=Depends(current_
         if p["contractor_id"] != u["id"]:
             raise HTTPException(403, "Not your project")
         new_st = req.status.lower().strip()
-        if new_st in ("active", "in_progress"):
-            c.execute("UPDATE projects SET status='in_progress',updated_at=? WHERE id=?", (time.time(), pid))
-            event_st = "in_progress"
-        elif new_st == "completed":
-            c.execute("UPDATE projects SET status='completed',updated_at=? WHERE id=?", (time.time(), pid))
-            event_st = "completed"
-        elif new_st == "cancelled":
-            c.execute("UPDATE projects SET status='cancelled',updated_at=? WHERE id=?", (time.time(), pid))
-            event_st = "cancelled"
+        curr_st = p["status"]
+
+        if curr_st == "requested":
+            if new_st == "accepted":
+                raise HTTPException(400, "Projects must be accepted via negotiation offer acceptance.")
+            elif new_st in ("rejected", "declined"):
+                event_st = "rejected"
+            elif new_st == "cancelled":
+                event_st = "cancelled"
+            else:
+                raise HTTPException(400, f"Cannot transition project from requested to {new_st}")
+        elif curr_st == "accepted":
+            if new_st in ("active", "in_progress"):
+                event_st = "in_progress"
+            elif new_st == "cancelled":
+                event_st = "cancelled"
+            else:
+                raise HTTPException(400, f"Cannot transition project from accepted to {new_st}")
+        elif curr_st == "in_progress":
+            if new_st == "completed":
+                event_st = "completed"
+            elif new_st == "cancelled":
+                event_st = "cancelled"
+            else:
+                raise HTTPException(400, f"Cannot transition project from in_progress to {new_st}")
         else:
-            c.execute("UPDATE projects SET status=?,updated_at=? WHERE id=?", (new_st, time.time(), pid))
-            event_st = new_st
+            raise HTTPException(400, f"Project is already {curr_st}")
+
+        c.execute("UPDATE projects SET status=?,updated_at=? WHERE id=?", (event_st, time.time(), pid))
     firebase_sync.sync_project(pid)
     await notify(p["customer_id"], {"type": "project_update", "project_id": pid, "status": event_st})
     return {"ok": True, "status": event_st}
