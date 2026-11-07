@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS bookings(
   skill TEXT NOT NULL, note TEXT DEFAULT '', address TEXT DEFAULT '',
   lat REAL, lng REAL,
   start_date TEXT NOT NULL, days INTEGER DEFAULT 1, agreed_rate INTEGER DEFAULT 0,
-  status TEXT DEFAULT 'requested' CHECK(status IN ('requested','accepted','rejected','completed','cancelled')),
+  status TEXT DEFAULT 'requested' CHECK(status IN ('requested','accepted','work_done','completed','rejected','cancelled')),
   rating INTEGER, review TEXT DEFAULT '',
   created_at REAL NOT NULL, updated_at REAL NOT NULL
 );
@@ -153,6 +153,37 @@ CREATE TABLE IF NOT EXISTS notifications(
   read INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_u ON notifications(user_id, read);
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  booking_id INTEGER REFERENCES bookings(id),
+  project_id INTEGER REFERENCES projects(id),
+  milestone_id INTEGER REFERENCES project_milestones(id),
+  customer_id INTEGER NOT NULL REFERENCES users(id),
+  worker_id INTEGER REFERENCES users(id),
+  amount_paise INTEGER NOT NULL,
+  fee_paise INTEGER NOT NULL DEFAULT 0,
+  net_paise INTEGER NOT NULL,
+  currency TEXT DEFAULT 'INR',
+  status TEXT DEFAULT 'created' CHECK(status IN ('created','held','released','refunded','failed','cash_pending','cash_confirmed')),
+  gateway TEXT DEFAULT 'razorpay',
+  gateway_order_id TEXT DEFAULT '',
+  gateway_payment_id TEXT DEFAULT '',
+  payment_method TEXT DEFAULT 'online',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_payments_b ON payments(booking_id);
+CREATE INDEX IF NOT EXISTS idx_payments_c ON payments(customer_id);
+CREATE INDEX IF NOT EXISTS idx_payments_w ON payments(worker_id);
+CREATE TABLE IF NOT EXISTS payouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  payment_id INTEGER REFERENCES payments(id),
+  amount_paise INTEGER NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending','processed','failed')),
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_payouts_u ON payouts(user_id);
 CREATE INDEX IF NOT EXISTS idx_b_customer ON bookings(customer_id);
 CREATE INDEX IF NOT EXISTS idx_b_job ON bookings(job_id);
 CREATE INDEX IF NOT EXISTS idx_offers_ref ON offers(kind, ref_id);

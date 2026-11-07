@@ -133,3 +133,33 @@ export function compressAndResizeImage(file, maxDim = 320, quality = 0.82) {
   });
 }
 
+// ---------------------------------------------------------------- Payments API
+export async function createPaymentOrder(data, token) {
+  return api("/payments/order", "POST", data, token);
+}
+
+export async function verifyPayment(data, token) {
+  return api("/payments/verify", "POST", data, token);
+}
+
+export async function confirmCashPayment(paymentId, data = {}, token) {
+  return api(`/payments/${paymentId}/cash-confirm`, "POST", data, token);
+}
+
+export async function releasePayment(paymentId, token) {
+  return api(`/payments/${paymentId}/release`, "POST", {}, token);
+}
+
+export async function getPaymentReceipt(paymentId, token) {
+  return api(`/payments/${paymentId}/receipt`, "GET", null, token);
+}
+
+export async function getBookingPayment(bookingId, token) {
+  return api(`/payments/booking/${bookingId}`, "GET", null, token);
+}
+
+export async function getMyPayments(token) {
+  return api("/payments/my", "GET", null, token);
+}
+
+

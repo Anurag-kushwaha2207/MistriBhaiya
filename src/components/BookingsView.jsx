@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { syncBooking } from '../firebase';
+import { PaymentPayModal, PaymentReceiptModal } from './Modals';
 
 export default function BookingsView({
   user,
@@ -15,6 +16,9 @@ export default function BookingsView({
   t
 }) {
   const [bookings, setBookings] = useState([]);
+  const [payments, setPayments] = useState({});
+  const [payModalBooking, setPayModalBooking] = useState(null);
+  const [viewReceipt, setViewReceipt] = useState(null);
   const [loading, setLoading] = useState(false);
   const [startOtpInput, setStartOtpInput] = useState({});
   const [showOtpField, setShowOtpField] = useState({});
@@ -26,12 +30,51 @@ export default function BookingsView({
   const loadBookings = async () => {
     setLoading(true);
     try {
-      const res = await api('/bookings/mine', 'GET', null, token);
+      const [res, pRes] = await Promise.all([
+        api('/bookings/mine', 'GET', null, token),
+        api('/payments/my', 'GET', null, token).catch(() => ({ payments: [] }))
+      ]);
       setBookings(res.bookings || []);
+      const pMap = {};
+      (pRes.payments || []).forEach((p) => {
+        if (p.booking_id) {
+          pMap[p.booking_id] = p;
+        }
+      });
+      setPayments(pMap);
     } catch (err) {
       showToast(err.message || 'बुकिंग लोड करने में समस्या');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirmCash = async (paymentId) => {
+    try {
+      await api(`/payments/${paymentId}/cash-confirm`, 'POST', {}, token);
+      showToast('नकद भुगतान की पुष्टि हो गई! ✅');
+      loadBookings();
+    } catch (err) {
+      showToast(err.message || 'पुष्टि विफल');
+    }
+  };
+
+  const handleReleaseEscrow = async (paymentId) => {
+    try {
+      await api(`/payments/${paymentId}/release`, 'POST', null, token);
+      showToast('एस्क्रो राशि मिस्त्री को रिलीज़ कर दी गई! 🎉');
+      loadBookings();
+    } catch (err) {
+      showToast(err.message || 'रिलीज़ विफल');
+    }
+  };
+
+  const handleOpenReceipt = async (paymentId) => {
+    try {
+      const receipt = await api(`/payments/${paymentId}/receipt`, 'GET', null, token);
+      setViewReceipt(receipt);
+    } catch (err) {
+      showToast(err.message || 'रसीद लोड नहीं हो सकी');
     }
   };
 
@@ -184,6 +227,97 @@ export default function BookingsView({
                   मिस्त्री को काम शुरू करते समय यह 4-अंकों का OTP बताएं।
                 </div>
               </div>
+            )}
+
+            {/* Payment Information & Actions */}
+            {payments[b.id] ? (
+              <div style={{
+                background: payments[b.id].status === 'held' ? '#e8f5e9' : payments[b.id].status === 'cash_pending' ? '#fffde7' : '#f5f5f5',
+                border: `1px solid ${payments[b.id].status === 'held' ? '#a5d6a7' : payments[b.id].status === 'cash_pending' ? '#fff59d' : '#e0e0e0'}`,
+                borderRadius: '8px',
+                padding: '8px 12px',
+                margin: '8px 0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '6px'
+              }}>
+                <div style={{ fontSize: '13px' }}>
+                  {payments[b.id].status === 'held' && (
+                    <span style={{ color: '#1b5e20', fontWeight: 'bold' }}>
+                      🔒 एस्क्रो सुरक्षित: ₹{payments[b.id].amount_paise / 100}
+                    </span>
+                  )}
+                  {(payments[b.id].status === 'completed' || payments[b.id].status === 'released') && (
+                    <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>
+                      ✅ भुगतान सफल: ₹{payments[b.id].amount_paise / 100}
+                    </span>
+                  )}
+                  {payments[b.id].status === 'cash_pending' && (
+                    <span style={{ color: '#f57f17', fontWeight: 'bold' }}>
+                      💵 नकद भुगतान बाकी: ₹{payments[b.id].amount_paise / 100}
+                    </span>
+                  )}
+                  {payments[b.id].status === 'cash_confirmed' && (
+                    <span style={{ color: '#1b5e20', fontWeight: 'bold' }}>
+                      ✅ नकद प्राप्त हुआ: ₹{payments[b.id].amount_paise / 100}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {isWorker && payments[b.id].status === 'cash_pending' && (
+                    <button
+                      type="button"
+                      style={{ background: '#2e7d32', color: '#fff', padding: '4px 8px', fontSize: '11px', borderRadius: '4px' }}
+                      onClick={() => handleConfirmCash(payments[b.id].id)}
+                    >
+                      ✔ नकद मिला
+                    </button>
+                  )}
+                  {!isWorker && payments[b.id].status === 'held' && (b.status === 'completed' || b.status === 'started') && (
+                    <button
+                      type="button"
+                      style={{ background: '#1b5e20', color: '#fff', padding: '4px 8px', fontSize: '11px', borderRadius: '4px' }}
+                      onClick={() => handleReleaseEscrow(payments[b.id].id)}
+                    >
+                      रिलीज़ करें
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="sec"
+                    style={{ padding: '3px 8px', fontSize: '11px' }}
+                    onClick={() => handleOpenReceipt(payments[b.id].id)}
+                  >
+                    🧾 रसीद
+                  </button>
+                </div>
+              </div>
+            ) : (
+              !isWorker && (b.status === 'accepted' || b.status === 'started') && (
+                <div style={{ margin: '8px 0' }}>
+                  <button
+                    type="button"
+                    style={{
+                      background: '#1b5e20',
+                      color: '#fff',
+                      fontSize: '13px',
+                      padding: '7px 12px',
+                      borderRadius: '6px',
+                      width: '100%',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    onClick={() => setPayModalBooking(b)}
+                  >
+                    💳 अग्रिम / सुरक्षित भुगतान करें (₹{(b.agreed_rate || b.daily_rate || 500) * (b.days || 1)})
+                  </button>
+                </div>
+              )
             )}
 
             {/* CASE 1: STATUS REQUESTED (Negotiation / Pending) */}
@@ -402,6 +536,26 @@ export default function BookingsView({
           </div>
         );
       })}
+
+      {payModalBooking && (
+        <PaymentPayModal
+          booking={payModalBooking}
+          user={user}
+          token={token}
+          onClose={() => setPayModalBooking(null)}
+          onSuccess={() => loadBookings()}
+          showToast={showToast}
+          t={t}
+        />
+      )}
+
+      {viewReceipt && (
+        <PaymentReceiptModal
+          receipt={viewReceipt}
+          onClose={() => setViewReceipt(null)}
+          t={t}
+        />
+      )}
     </div>
   );
 }

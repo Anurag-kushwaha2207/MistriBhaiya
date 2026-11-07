@@ -880,6 +880,12 @@ async def complete(bid: int, u=Depends(current_user)):
             await push_worker_status(c, b["worker_id"])
             event_st = "completed"
             text_msg = "ग्राहक ने काम पूरा होने की पुष्टि कर दी है।"
+            # Auto-release held escrow payment if exists
+            held_pay = c.execute("SELECT id, net_paise, worker_id FROM payments WHERE booking_id=? AND status='held'", (bid,)).fetchone()
+            if held_pay:
+                c.execute("UPDATE payments SET status='released', updated_at=? WHERE id=?", (time.time(), held_pay["id"]))
+                c.execute("INSERT INTO payouts(user_id, payment_id, amount_paise, status, created_at) VALUES(?,?,?,'pending',?)",
+                          (held_pay["worker_id"], held_pay["id"], held_pay["net_paise"], time.time()))
 
     firebase_sync.sync_booking(bid)
     if event_st == "completed":
@@ -1359,10 +1365,11 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
     finally:
         hub.remove(ws)
 
-from . import negotiation, contractor, assistant       # feature routers
+from . import negotiation, contractor, assistant, payments       # feature routers
 app.include_router(negotiation.router)
 app.include_router(contractor.router)
 app.include_router(assistant.router)
+app.include_router(payments.router)
 
 # ---------------------------------------------------------------- frontend (PWA)
 FRONT = Path(os.getenv("FRONTEND_DIR", Path(__file__).resolve().parents[2] / "frontend"))

@@ -438,3 +438,208 @@ export function OfferModal({ offer, token, onClose, onAccept, showToast, t }) {
   );
 }
 
+export function PaymentPayModal({ booking, user, token, onClose, onSuccess, showToast, t }) {
+  const [method, setMethod] = useState('online');
+  const [loading, setLoading] = useState(false);
+  const totalAmount = (booking?.agreed_rate || booking?.daily_rate || 500) * (booking?.days || 1);
+
+  const handlePay = async () => {
+    setLoading(true);
+    try {
+      const amountPaise = totalAmount * 100;
+      const res = await api('/payments/order', 'POST', {
+        booking_id: booking.id,
+        amount_paise: amountPaise,
+        method: method
+      }, token);
+
+      if (method === 'cash') {
+        showToast('नकद भुगतान दर्ज किया गया। काम पूरा होने पर मिस्त्री को नकद दें।');
+        if (onSuccess) onSuccess();
+        onClose();
+        return;
+      }
+
+      // Online Razorpay flow
+      if (res.key_id && window.Razorpay) {
+        const options = {
+          key: res.key_id,
+          amount: res.amount_paise,
+          currency: 'INR',
+          name: 'MistriBhaiya',
+          description: `बुकिंग #${booking.id} एस्क्रो भुगतान`,
+          order_id: res.order_id,
+          handler: async (resp) => {
+            try {
+              await api('/payments/verify', 'POST', {
+                payment_id: res.payment_id,
+                razorpay_order_id: resp.razorpay_order_id,
+                razorpay_payment_id: resp.razorpay_payment_id,
+                razorpay_signature: resp.razorpay_signature
+              }, token);
+              showToast('भुगतान सफल! राशि एस्क्रो में सुरक्षित है 🔒');
+              if (onSuccess) onSuccess();
+              onClose();
+            } catch (err) {
+              showToast(err.message || 'सत्यापन विफल');
+            }
+          },
+          prefill: {
+            name: user?.name || '',
+            contact: user?.phone || ''
+          },
+          theme: { color: '#2e7d32' }
+        };
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+      } else {
+        // Direct auto-verify in test/dev mode
+        await api('/payments/verify', 'POST', {
+          payment_id: res.payment_id,
+          razorpay_order_id: res.order_id,
+          razorpay_payment_id: 'pay_mock_' + Date.now(),
+          razorpay_signature: 'sig_mock'
+        }, token);
+        showToast('भुगतान सफल! राशि एस्क्रो में सुरक्षित है 🔒');
+        if (onSuccess) onSuccess();
+        onClose();
+      }
+    } catch (err) {
+      showToast(err.message || 'भुगतान प्रक्रिया में समस्या आई');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal" onClick={(e) => { if (e.target.className === 'modal') onClose(); }}>
+      <div className="sheet" style={{ maxWidth: '420px', borderRadius: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#1b5e20' }}>💳 अग्रिम / भुगतान (Pay)</h3>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div style={{ textAlign: 'center', margin: '14px 0' }}>
+          <div style={{ fontSize: '13px', color: '#666' }}>कुल राशि (Total Amount)</div>
+          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1b5e20' }}>₹{totalAmount}</div>
+          <div style={{ fontSize: '12px', color: '#888' }}>
+            ({booking?.days || 1} दिन × ₹{booking?.agreed_rate || booking?.daily_rate || 500}/दिन)
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '16px 0' }}>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
+            border: method === 'online' ? '2px solid #2e7d32' : '1px solid #ddd',
+            borderRadius: '10px', cursor: 'pointer', background: method === 'online' ? '#e8f5e9' : '#fff'
+          }}>
+            <input type="radio" name="paymethod" checked={method === 'online'} onChange={() => setMethod('online')} />
+            <div>
+              <b style={{ color: '#1b5e20' }}>🔒 ऑनलाइन एस्क्रो (UPI / कार्ड / नेटबैंकिंग)</b>
+              <div style={{ fontSize: '12px', color: '#666' }}>काम पूरा होने तक राशि सुरक्षित रहेगी।</div>
+            </div>
+          </label>
+
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
+            border: method === 'cash' ? '2px solid #2e7d32' : '1px solid #ddd',
+            borderRadius: '10px', cursor: 'pointer', background: method === 'cash' ? '#e8f5e9' : '#fff'
+          }}>
+            <input type="radio" name="paymethod" checked={method === 'cash'} onChange={() => setMethod('cash')} />
+            <div>
+              <b style={{ color: '#333' }}>💵 नकद भुगतान (Cash to Worker)</b>
+              <div style={{ fontSize: '12px', color: '#666' }}>काम पूरा होने पर सीधे मिस्त्री को हाथ में नकद दें।</div>
+            </div>
+          </label>
+        </div>
+
+        <button className="big" style={{ background: '#2e7d32', width: '100%' }} onClick={handlePay} disabled={loading}>
+          {loading ? 'प्रक्रिया जारी है...' : (method === 'online' ? `₹${totalAmount} सुरक्षित भुगतान करें` : 'नकद विकल्प चुनें')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function PaymentReceiptModal({ receipt, onClose, t }) {
+  if (!receipt) return null;
+  const gross = receipt.amount != null ? receipt.amount : 0;
+  const fee = receipt.fee != null ? receipt.fee : 0;
+  const net = receipt.net != null ? receipt.net : 0;
+  const st = receipt.status || '';
+
+  const getStatusLabel = (s) => {
+    if (s === 'held') return '🔒 एस्क्रो में सुरक्षित जमा';
+    if (s === 'completed' || s === 'released') return '✅ भुगतान सफल (रिलीज़)';
+    if (s === 'cash_pending') return '💵 नकद भुगतान लंबित';
+    if (s === 'cash_confirmed') return '✅ नकद प्राप्त हुआ';
+    if (s === 'refunded') return '↩️ वापस किया गया';
+    return s;
+  };
+
+  return (
+    <div className="modal" onClick={(e) => { if (e.target.className === 'modal') onClose(); }}>
+      <div className="sheet" style={{ maxWidth: '420px', borderRadius: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#1b5e20' }}>🧾 भुगतान रसीद (Receipt)</h3>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div style={{ textAlign: 'center', margin: '16px 0 14px' }}>
+          <div style={{ fontSize: '36px' }}>
+            {st === 'held' ? '🔒' : (st === 'completed' || st === 'released' || st === 'cash_confirmed') ? '✅' : '💵'}
+          </div>
+          <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#1b5e20', marginTop: '4px' }}>
+            ₹{gross}
+          </div>
+          <span className={`pill ${st === 'held' ? 'offline' : (st === 'completed' || st === 'released' || st === 'cash_confirmed') ? 'free' : 'busy'}`} style={{ marginTop: '6px', display: 'inline-block' }}>
+            {getStatusLabel(st)}
+          </span>
+        </div>
+
+        <div style={{ background: '#f8f9fa', borderRadius: '10px', padding: '14px', fontSize: '13px', lineHeight: '1.7', border: '1px solid #e9ecef' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#666' }}>रसीद आईडी (ID):</span>
+            <b>#{receipt.id}</b>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#666' }}>भुगतान माध्यम:</span>
+            <b style={{ textTransform: 'uppercase' }}>{receipt.method || 'online'}</b>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#666' }}>ग्राहक (Customer):</span>
+            <b>{receipt.customer_name || '-'}</b>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#666' }}>कारीगर (Worker):</span>
+            <b>{receipt.worker_name || '-'}</b>
+          </div>
+          <hr style={{ margin: '8px 0', border: 0, borderTop: '1px dashed #ced4da' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#666' }}>कुल राशि (Gross):</span>
+            <span>₹{gross}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#666' }}>प्लेटफ़ॉर्म शुल्क (5%):</span>
+            <span>₹{fee}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#1b5e20', fontSize: '14px', marginTop: '4px' }}>
+            <span>कारीगर को शुद्ध (Net Payout):</span>
+            <span>₹{net}</span>
+          </div>
+          {receipt.created_at && (
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '10px', textAlign: 'center' }}>
+              दिनांक: {new Date(receipt.created_at * 1000).toLocaleString('hi-IN')}
+            </div>
+          )}
+        </div>
+
+        <button className="big" style={{ marginTop: '16px', background: '#2e7d32' }} onClick={onClose}>
+          ठीक है (Close)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
