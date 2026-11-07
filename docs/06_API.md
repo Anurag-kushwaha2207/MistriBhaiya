@@ -1,84 +1,94 @@
-# MistriBaiya API (v0.1)
+# MistriBhaiya API (v1.0)
 Base: `/api`. Auth: `Authorization: Bearer <token>`. Interactive docs: `/docs` (Swagger) when the server runs.
 
+## 1. Authentication & Security
 | Method | Path | Who | Purpose |
 |---|---|---|---|
-| POST | /auth/request-otp | all | `{phone}` -> sends OTP (dev mode returns `dev_otp`) |
-| POST | /auth/verify | all | `{phone, otp, role, name}` -> `{token,user}` (creates account on first login) |
-| GET/PUT | /me | all | profile; worker gets `profile` incl. live `status` |
-| PUT | /worker/profile | worker | skills, daily_rate, experience, village, lat/lng, **radius_km** (how far worker will travel) |
-| POST | /worker/status | worker | `{status: free|busy|offline, hours}`; "free" auto-expires |
+| POST | /auth/request-otp | all | `{phone}` -> sends OTP (dev mode returns `dev_otp`, prod uses SMS gateway) |
+| POST | /auth/verify | all | `{phone, otp, role, name, password}` -> verifies OTP, creates/logs in account |
+| POST | /auth/login-password | all | `{phone, password}` -> logs in using password |
+| POST | /auth/set-password | authenticated | `{password}` -> sets or changes password for authenticated user |
+| POST | /auth/reset-password | all | `{phone, otp, new_password}` -> resets password after OTP verification |
+| GET/PUT | /me | all | profile; worker gets `profile` incl. live `status` and `skills` |
+
+*Security notes:* Password hashes use PBKDF2-HMAC-SHA256 with 100,000 iterations and per-user random salt. Login and OTP endpoints enforce rate limiting and temporary lockouts after failed attempts.
+
+## 2. Worker & Customer Core
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| PUT | /worker/profile | worker | skills, daily_rate, experience, village, lat/lng, **radius_km** (requires lat/lng) |
+| POST | /worker/status | worker | `{status: free\|busy\|offline, hours}`; "free" auto-expires |
 | GET | /worker/jobs?radius_km= | worker | open jobs inside worker's own radius, matching skills |
 | POST | /jobs/{id}/interest | worker | "I can do this" -> customer notified live |
-| GET | /workers/search | customer | `lat,lng,radius_km,skill,free_only,on_date,sort(smart/distance/rating/rate)` |
+| GET | /workers/search | customer | `lat,lng,radius_km,skill,free_only,on_date,sort,expand` |
 | POST | /jobs, GET /jobs/mine, POST /jobs/{id}/cancel | customer | post/manage work |
 | GET | /jobs/{id}/interested | customer | workers who showed interest |
-| POST | /bookings | customer | request a mistri for dates (409 if already booked) |
-| GET | /bookings/mine | both | list |
+| POST | /bookings | customer | request a mistri for dates (409 if already booked; lat/lng validated) |
+| GET | /bookings/mine | both | list bookings with negotiation rates and payment states |
 | POST | /bookings/{id}/respond | worker | `{accept}`; accept makes worker BUSY automatically |
-| POST | /bookings/{id}/complete, /cancel | both | lifecycle |
+| POST | /bookings/{id}/start | worker | `{otp}`; starts work with 4-digit OTP provided by customer |
+| POST | /bookings/{id}/complete | both | marks work completed; auto-releases escrow payment to worker payout |
+| POST | /bookings/{id}/cancel | both | cancels booking |
 | POST | /bookings/{id}/rate | customer | `{stars, review}` |
 | POST | /calls/connect | both | `{worker_id}` or `{booking_id}` -> direct tel link or masked call |
-| GET | /admin/stats | admin | counts |
-| WS | /ws?token= | both | send `{type:"subscribe",lat,lng,radius_km}`; receive `worker_status`, `booking_new`, `booking_update`, `job_interest` |
+| GET | /admin/stats | admin | counts and platform metrics |
 
-## Instant dispatch (Rapido-style)
+## 3. Instant Dispatch (Rapido-style)
 | Method | Path | Who | Purpose |
 |---|---|---|---|
-| POST | /instant | customer | `{skill,lat,lng,radius_km,days,note}` -> offers go to the nearest FREE workers (wave size 5, 30 s per wave, max 3 waves) |
-| GET | /instant/{id} | customer | status: searching / matched / no_worker / cancelled (also advances an expired wave) |
-| POST | /instant/{id}/accept | worker | first accept wins (409 if taken/expired) -> booking is created `accepted`, worker becomes BUSY, start-OTP generated |
-| POST | /instant/{id}/decline, /cancel | worker / customer | decline moves to next wave when everyone declined |
-WebSocket events: `instant_offer` (to workers), `instant_status` (to customer), `instant_closed`.
+| POST | /instant | customer | `{skill,lat,lng,radius_km,days,note}` -> offers go to nearest free/online workers |
+| GET | /instant/{id} | customer | status: searching / matched / no_worker / cancelled |
+| POST | /instant/{id}/accept | worker | first accept wins -> booking created `accepted`, worker BUSY, start-OTP generated |
+| POST | /instant/{id}/decline | worker | decline moves to next wave |
+| POST | /instant/{id}/cancel | customer | cancels searching instant request |
 
-## Trust and safety
-| Method | Path | Purpose |
-|---|---|---|
-| POST | /bookings/{id}/start | worker enters customer's 4-digit OTP; `complete` needs it when REQUIRE_START_OTP=1 |
-| POST | /sos | `{booking_id,lat,lng}` logs SOS, alerts other party and admins, returns emergency number 112 |
-| POST | /reports | `{reported_id,reason,booking_id}` |
-| GET | /worker/earnings | jobs done, days, total and this-month earnings |
-| GET | /admin/workers, /admin/bookings, /admin/safety; POST /admin/workers/{id}/verify | admin |
+## 4. Notifications & Realtime
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | /notifications | all | retrieves unread and recent persisted notifications |
+| POST | /notifications/read | all | `{id}` -> marks notification as read |
+| POST | /notifications/read-all | all | marks all notifications as read |
+| WS | /ws?token= | all | subscribe to live events: `worker_status`, `booking_new`, `booking_update`, `job_interest`, `payment_held`, `sos` |
 
-## In-app voice call (WebRTC signalling over /ws)
-Client sends `{type:"rtc", booking_id, data:{kind:"offer|answer|ice|hangup|busy", ...}}`; server relays to the other participant only.
-If the other person is offline, server replies `{type:"rtc_unavailable"}` and the app falls back to a masked phone call (`POST /calls/connect`).
-`GET /meta` returns `ice_servers` (STUN, and TURN if configured). Microphone needs HTTPS (or localhost).
+## 5. Payments, Escrow & Receipts
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| POST | /payments/order | customer | `{booking_id, project_id, amount_paise, method: online\|cash}` -> creates Razorpay order or registers cash |
+| POST | /payments/verify | customer | `{payment_id, razorpay_order_id, razorpay_payment_id, razorpay_signature}` -> verifies signature, places funds in escrow (`held`) |
+| POST | /payments/webhook | gateway | webhook handler for Razorpay `order.paid` / `payment.captured` |
+| POST | /payments/{id}/cash-confirm | both | worker or customer confirms physical cash exchange |
+| POST | /payments/{id}/release | customer/admin | releases funds held in escrow to worker payout |
+| GET | /payments/{id}/receipt | customer/worker | returns structured receipt with gross, 5% fee, net payout, and status |
+| GET | /payments/my | all | lists recent payments for logged-in user |
+| GET | /payments/booking/{booking_id} | all | retrieves active payment record for booking |
 
-## How "who is free right now" works (real time)
-1. Worker taps "I am free" -> status=free with an expiry (default 12 h). Expiry prevents stale "free" labels.
-2. Accepting a booking marks the worker BUSY automatically for those dates (no manual action needed).
-3. Every change is pushed over WebSocket to customers whose search circle contains that worker.
-4. For a future date, a worker is "free" if no accepted booking overlaps that date.
-5. Exact home coordinates are never sent to customers; only distance and village.
+## 6. Thekedar (Contractor) Features
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| PUT | /contractor/profile | contractor | company, skills, location, radius, min budget |
+| GET | /contractors/search | customer | customers search contractors (distance, skill, rating, crew size) |
+| GET | /contractor/find-workers | contractor | filters: `radius_km, skill, max_rate, free_only, on_date, sort` |
+| GET/POST | /contractor/crew | contractor | list crew; add by name+phone |
+| POST | /contractor/crew/from-worker/{wid} | contractor | invite a registered worker from search |
+| PUT/DELETE | /contractor/crew/{id} | contractor | edit rate or remove crew member |
+| GET/POST | /worker/invites | worker | view and respond to crew invitations |
+| POST | /contractor/projects | customer | create project with contractor: title, dates, days, budget, workers_needed |
+| GET | /projects/mine, /projects/{id} | both | list / detail project |
+| POST | /projects/{id}/milestones | contractor/customer | add milestone with title, amount, and due date |
+| POST | /projects/{id}/assign | contractor | assign crew members to project |
+| POST | /projects/{id}/attendance | contractor | daily crew attendance records |
+| POST | /contractor/ledger | contractor | record advance, expense, or wage payment |
+| GET | /contractor/ledger/summary | contractor | total earned, advances, wages paid, and net balance |
+| GET | /contractor/ledger/export | contractor | CSV export of complete contractor ledger |
+| GET | /contractor/dashboard | contractor | dashboard statistics, business value, active crew, wages due |
 
-## Negotiation and chat (bookings and projects)
-`{kind}` is `bookings` or `projects`. For bookings the amount is the **daily rate**, for projects the **total budget**.
-| Method | Path | Purpose |
-|---|---|---|
-| POST | /bookings (with `agreed_rate`) | customer's first offer; `offer_by` = customer |
-| POST | /{kind}/{id}/counter | `{rate, days?, note}` the party who did NOT make the last offer counters (max 8 rounds) |
-| POST | /{kind}/{id}/accept | accept the other side's latest offer; deal is fixed (booking -> accepted, OTP generated, worker busy) |
-| POST | /{kind}/{id}/reject | either side |
-| GET | /{kind}/{id}/negotiation | offer history, `my_turn`, current rate/days |
-| GET/POST | /{kind}/{id}/messages | chat; phone numbers are masked as `[number hidden]` |
-| POST | /jobs/{id}/interest | worker can quote `{rate}`; customer sees `quoted_rate` |
-
-## Contractor (role = contractor)
-| Method | Path | Purpose |
-|---|---|---|
-| PUT | /contractor/profile | company, skills, location, radius, min budget |
-| GET | /contractors/search | customers find contractors (distance, skill, rating, crew size) |
-| GET | /contractor/find-workers | filters: `radius_km, skill, max_rate, free_only, on_date, min_hours_free, sort` |
-| GET/POST | /contractor/crew | list; add by name+phone (registered worker -> invite, else offline labour) |
-| POST | /contractor/crew/from-worker/{wid} | invite a worker found in search |
-| PUT/DELETE | /contractor/crew/{id} | edit rate / remove |
-| GET/POST | /worker/invites, /worker/invites/{id}/respond | worker accepts or declines crew invitation |
-| POST | /projects | customer -> contractor: title, dates, days, budget, workers_needed |
-| GET | /projects/mine, /projects/{id} | list / detail |
-| POST | /projects/{id}/assign, /attendance, /start, /complete, /cancel, /rate, /call | project lifecycle |
-| POST | /contractor/ledger; GET /contractor/ledger/summary | advance / payment; earned - advance - paid = balance |
-| GET | /contractor/dashboard | counts, business value, wages due |
-
-## Assistant
-`POST /assistant {text, lang, start, location:{lat,lng}}` -> `{reply, chips[], actions[], lang}`. Actions: `request_location`, `navigate`, `refresh`, `instant_started`, `choose_language`. `POST /assistant/reset`.
+## 7. AI Sahayak (NLP Assistant)
+`POST /assistant`
+- Body: `{text: str, lang: str, start: bool, location: {lat, lng}}`
+- Response: `{reply: str, chips: list[str], actions: list[dict], lang: str, session: dict}`
+- Capabilities:
+  - 10 Construction trade skills recognized with colloquial Bhojpuri/Hindi aliases (rajmistri, mazdoor, plumber, electrician, painter, carpenter, tiles, welder, pop, saria).
+  - Indian and regional city geocoding (Kanpur, Lucknow, Delhi, Varanasi, etc.).
+  - Natural relative date parsing ("aaj", "kal", "parson", "somwar", "agle hafte").
+  - LLM fallback (Gemini/Anthropic/OpenAI) with pure rule-based fallback when offline.
+  - Strict role validation (workers cannot post customer jobs, customers cannot change worker status).
