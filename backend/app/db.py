@@ -127,6 +127,17 @@ CREATE TABLE IF NOT EXISTS ledger(
   id INTEGER PRIMARY KEY AUTOINCREMENT, contractor_id INTEGER NOT NULL, crew_id INTEGER NOT NULL, project_id INTEGER,
   kind TEXT NOT NULL CHECK(kind IN ('advance','payment')), amount INTEGER NOT NULL, note TEXT DEFAULT '', created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS project_milestones(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  title TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  percentage INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'paid', 'released')),
+  due_date TEXT,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_milestones_proj ON project_milestones(project_id);
 CREATE TABLE IF NOT EXISTS assistant_sessions(user_id INTEGER PRIMARY KEY, lang TEXT DEFAULT 'hi', state TEXT DEFAULT '{}', updated_at REAL);
 CREATE TABLE IF NOT EXISTS call_logs(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,6 +221,18 @@ def migrate(c):
     c.execute("CREATE INDEX IF NOT EXISTS idx_offers_ref ON offers(kind, ref_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_crew_worker ON crew_members(worker_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_att_proj ON attendance(project_id)")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS project_milestones(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES projects(id),
+      title TEXT NOT NULL,
+      amount INTEGER NOT NULL DEFAULT 0,
+      percentage INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'paid', 'released')),
+      due_date TEXT,
+      created_at REAL NOT NULL
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_milestones_proj ON project_milestones(project_id)")
 
 def init_db():
     with db() as c:

@@ -619,3 +619,159 @@ def contractor_dashboard(u=Depends(current_user)):
         }
     d["wages_due"] = ledger_summary(u)["total_due"]
     return d
+
+# ---------------------------------------------------------------- contractor job feed & conversion (D1)
+@router.get("/api/contractor/jobs")
+def contractor_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, lng: Optional[float] = None,
+                    skill: Optional[str] = None, all_skills: bool = False, u=Depends(current_user)):
+    """Open jobs for contractors matching contractor's skills within contractor's radius."""
+    contractor_only(u)
+    with db() as c:
+        cp = c.execute("SELECT * FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
+        c_lat = lat if lat is not None else (cp["lat"] if cp else None)
+        c_lng = lng if lng is not None else (cp["lng"] if cp else None)
+        r = clamp_radius(radius_km if radius_km else (cp["radius_km"] if cp and cp["radius_km"] else 25))
+
+        if c_lat is not None and c_lng is not None:
+            la0, la1, ln0, ln1 = bbox(c_lat, c_lng, r)
+            rows = c.execute("SELECT j.*,u.name AS customer_name,u.phone AS customer_phone FROM jobs j JOIN users u ON u.id=j.customer_id "
+                             "WHERE j.status='open' AND j.lat BETWEEN ? AND ? AND j.lng BETWEEN ? AND ? "
+                             "ORDER BY j.created_at DESC LIMIT 200", (la0, la1, ln0, ln1)).fetchall()
+        else:
+            rows = c.execute("SELECT j.*,u.name AS customer_name,u.phone AS customer_phone FROM jobs j JOIN users u ON u.id=j.customer_id "
+                             "WHERE j.status='open' ORDER BY j.created_at DESC LIMIT 200").fetchall()
+
+    out = []
+    c_skills = {s.strip() for s in ((cp["skills"] if cp else "") or "").split(",") if s.strip()}
+    for j in rows:
+        d = haversine_km(c_lat, c_lng, j["lat"], j["lng"]) if (c_lat is not None and c_lng is not None and j["lat"] is not None and j["lng"] is not None) else None
+        if d is not None and d > r:
+            continue
+        if skill and j["skill"] != skill:
+            continue
+        if c_skills and not all_skills and not skill and j["skill"] not in c_skills:
+            continue
+        cust_phone = j["customer_phone"] or ""
+        masked_phone = ("XXXXXX" + cust_phone[-4:]) if len(cust_phone) >= 4 else ""
+        out.append({
+            "id": j["id"], "customer_id": j["customer_id"], "skill": j["skill"],
+            "description": j["description"], "address": j["address"],
+            "start_date": j["start_date"], "days": j["days"], "budget": j["budget"],
+            "customer_name": j["customer_name"] or "Customer", "customer_phone": masked_phone,
+            "distance_km": round(d, 1) if d is not None else None,
+            "matches_skill": (not c_skills or j["skill"] in c_skills)
+        })
+    if any(x["distance_km"] is not None for x in out):
+        out.sort(key=lambda x: (x["distance_km"] if x["distance_km"] is not None else 9999))
+    return {"jobs": out, "radius_km": r}
+
+class ContractorInterestReq(BaseModel):
+    rate: Optional[int] = Field(0, ge=0)
+    note: Optional[str] = Field("", max_length=200)
+
+@router.post("/api/contractor/jobs/{job_id}/interest")
+async def contractor_job_interest(job_id: int, req: ContractorInterestReq = ContractorInterestReq(), u=Depends(current_user)):
+    contractor_only(u)
+    with db() as c:
+        j = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if not j or j["status"] != "open":
+            raise HTTPException(404, "Job not found or no longer open")
+        c.execute("INSERT OR REPLACE INTO job_interests(job_id,worker_id,rate,created_at) VALUES(?,?,?,?)",
+                  (job_id, u["id"], req.rate, time.time()))
+    await notify(j["customer_id"], {
+        "type": "job_interest", "job_id": job_id, "contractor": u["name"],
+        "rate": req.rate, "role": "contractor"
+    })
+    return {"ok": True}
+
+class ConvertProjectReq(BaseModel):
+    contractor_id: int
+    title: Optional[str] = None
+    budget: Optional[int] = None
+    days: Optional[int] = None
+
+@router.post("/api/contractor/jobs/{job_id}/convert-project")
+async def convert_job_to_project(job_id: int, req: ConvertProjectReq, u=Depends(current_user)):
+    """Customer converts an open job into a project request assigned to an interested contractor."""
+    need_role(u, "customer")
+    now = time.time()
+    with db() as c:
+        j = c.execute("SELECT * FROM jobs WHERE id=? AND customer_id=?", (job_id, u["id"])).fetchone()
+        if not j:
+            raise HTTPException(404, "Job not found")
+        contractor = c.execute("SELECT * FROM users WHERE id=? AND role='contractor'", (req.contractor_id,)).fetchone()
+        if not contractor:
+            raise HTTPException(404, "Contractor not found")
+
+        title = req.title or (j["description"][:50] if j["description"] else f"{j['skill']} Project")
+        budget_val = req.budget if req.budget is not None else (j["budget"] or 0)
+        days_val = req.days if req.days is not None else (j["days"] or 1)
+
+        cur = c.execute(
+            "INSERT INTO projects(customer_id,contractor_id,title,description,address,lat,lng,skill,start_date,days,budget,workers_needed,offer_by,offer_rounds,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?,1,?,?)",
+            (u["id"], req.contractor_id, title, j["description"], j["address"], j["lat"], j["lng"], j["skill"], j["start_date"], days_val, budget_val, u["id"], now, now)
+        )
+        pid = cur.lastrowid
+        c.execute("INSERT INTO offers(kind,ref_id,from_id,rate,days,note,created_at) VALUES('project',?,?,?,?,?,?)",
+                  (pid, u["id"], budget_val, days_val, "", now))
+        # Mark job assigned
+        c.execute("UPDATE jobs SET status='assigned' WHERE id=?", (job_id,))
+    firebase_sync.sync_project(pid)
+    await notify(req.contractor_id, {
+        "type": "project_new", "project_id": pid, "title": title, "customer": u["name"] or "Customer"
+    })
+    return {"id": pid, "project_id": pid, "job_id": job_id}
+
+# ---------------------------------------------------------------- project payment milestones (D3)
+class MilestoneItem(BaseModel):
+    title: str = Field(..., max_length=120)
+    amount: int = Field(..., ge=0)
+    percentage: Optional[int] = Field(0, ge=0, le=100)
+    due_date: Optional[str] = None
+
+class CreateMilestonesReq(BaseModel):
+    milestones: List[MilestoneItem]
+
+@router.get("/api/projects/{pid}/milestones")
+def project_milestones_list(pid: int, u=Depends(current_user)):
+    with db() as c:
+        project_party(c, pid, u)
+        rows = c.execute("SELECT * FROM project_milestones WHERE project_id=? ORDER BY id ASC", (pid,)).fetchall()
+    return {"milestones": [dict(r) for r in rows]}
+
+@router.post("/api/projects/{pid}/milestones")
+def project_milestones_create(pid: int, req: CreateMilestonesReq, u=Depends(current_user)):
+    with db() as c:
+        p = project_party(c, pid, u)
+        if p["status"] in ("completed", "cancelled"):
+            raise HTTPException(400, "Cannot edit milestones for closed project")
+        c.execute("DELETE FROM project_milestones WHERE project_id=? AND status='pending'", (pid,))
+        now = time.time()
+        for m in req.milestones:
+            c.execute(
+                "INSERT INTO project_milestones(project_id,title,amount,percentage,status,due_date,created_at) VALUES(?,?,?,?,?,?,?)",
+                (pid, m.title, m.amount, m.percentage or 0, "pending", m.due_date, now)
+            )
+        rows = c.execute("SELECT * FROM project_milestones WHERE project_id=? ORDER BY id ASC", (pid,)).fetchall()
+    return {"ok": True, "milestones": [dict(r) for r in rows]}
+
+class MilestoneStatusReq(BaseModel):
+    status: str = Field(..., pattern="^(pending|paid|released)$")
+
+@router.post("/api/projects/{pid}/milestones/{mid}/status")
+async def project_milestone_update(pid: int, mid: int, req: MilestoneStatusReq, u=Depends(current_user)):
+    with db() as c:
+        p = project_party(c, pid, u)
+        m = c.execute("SELECT * FROM project_milestones WHERE id=? AND project_id=?", (mid, pid)).fetchone()
+        if not m:
+            raise HTTPException(404, "Milestone not found")
+        if req.status in ("paid", "released") and u["id"] != p["customer_id"]:
+            raise HTTPException(403, "Only customer can mark milestone paid or released")
+        c.execute("UPDATE project_milestones SET status=? WHERE id=?", (req.status, mid))
+    other = p["contractor_id"] if u["id"] == p["customer_id"] else p["customer_id"]
+    await notify(other, {
+        "type": "project_update", "project_id": pid, "milestone_id": mid,
+        "status": req.status, "title": m["title"]
+    })
+    return {"ok": True, "milestone_id": mid, "status": req.status}

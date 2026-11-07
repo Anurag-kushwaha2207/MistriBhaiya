@@ -423,3 +423,55 @@ def test_password_and_forgot_flow():
 
     # New password works
     assert client.post("/api/auth/login-password", json={"phone": p, "password": "newpass5678"}).status_code == 200
+
+def test_contractor_jobs_and_milestones():
+    ch, c_id = login("9000000881", "contractor", "Test Thekedar", loc=NEAR)
+    client.put("/api/contractor/profile", headers=ch, json={
+        "company": "Super Builders", "skills": ["rajmistri", "painter"], "village": "Mirzapur",
+        "lat": NEAR[0], "lng": NEAR[1], "radius_km": 30, "min_budget": 5000, "experience_years": 8, "about": "Experienced contractor"
+    })
+    cust_h, cust_id = login("9000000891", "customer", "Job Poster")
+
+    # Post a job matching contractor's skill within radius
+    j_res = client.post("/api/jobs", headers=cust_h, json={
+        "skill": "rajmistri", "description": "Need plaster work for boundary wall",
+        "address": "Civil Lines", "lat": NEAR[0], "lng": NEAR[1], "days": 5, "budget": 8000
+    })
+    assert j_res.status_code == 200
+    jid = j_res.json()["id"]
+
+    # 1. Contractor job feed (D1)
+    feed = client.get("/api/contractor/jobs", headers=ch).json()["jobs"]
+    assert any(x["id"] == jid for x in feed)
+
+    # 2. Contractor registers interest (D1)
+    int_res = client.post(f"/api/contractor/jobs/{jid}/interest", headers=ch, json={"rate": 7500, "note": "Can start Monday"})
+    assert int_res.status_code == 200
+
+    # 3. Customer converts job to project with this contractor (D1)
+    conv_res = client.post(f"/api/contractor/jobs/{jid}/convert-project", headers=cust_h, json={
+        "contractor_id": c_id, "title": "Boundary Wall Plaster Project", "budget": 7500, "days": 5
+    })
+    assert conv_res.status_code == 200
+    pid = conv_res.json()["project_id"]
+
+    # Contractor accepts negotiation
+    acc_res = client.post(f"/api/projects/{pid}/accept", headers=ch)
+    assert acc_res.status_code == 200
+
+    # 4. Project Milestones schedule (D3)
+    ms_res = client.post(f"/api/projects/{pid}/milestones", headers=cust_h, json={
+        "milestones": [
+            {"title": "Advance Material", "amount": 2500, "percentage": 33},
+            {"title": "Half Work Plaster", "amount": 2500, "percentage": 33},
+            {"title": "Final Completion", "amount": 2500, "percentage": 34}
+        ]
+    })
+    assert ms_res.status_code == 200
+    milestones = client.get(f"/api/projects/{pid}/milestones", headers=ch).json()["milestones"]
+    assert len(milestones) == 3
+
+    # Mark milestone paid by customer
+    mid = milestones[0]["id"]
+    pay_res = client.post(f"/api/projects/{pid}/milestones/{mid}/status", headers=cust_h, json={"status": "paid"})
+    assert pay_res.status_code == 200
