@@ -1,4 +1,5 @@
-import os, tempfile, time
+import os, sys, tempfile, time
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "t.db")
 os.environ["DEV_MODE"] = "1"
 os.environ["ADMIN_PHONES"] = "9000000001"

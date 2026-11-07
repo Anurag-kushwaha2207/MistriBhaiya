@@ -51,5 +51,7 @@ TURN_USER = os.getenv("TURN_USER", "")
 TURN_PASS = os.getenv("TURN_PASS", "")
 
 # Optional LLM help for the assistant (free-text understanding). Leave empty to use the built-in rule based assistant only.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "claude-sonnet-4-6")
