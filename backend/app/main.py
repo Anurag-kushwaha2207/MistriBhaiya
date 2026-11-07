@@ -1,9 +1,9 @@
-import asyncio, os, secrets, threading, time
+import asyncio, os, secrets, sys, threading, time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,17 +14,41 @@ from .calls import connect_call
 from .db import db, init_db
 from .geo import bbox, haversine_km
 from .realtime import hub, notify
-from .security import (current_user, hash_otp, make_token, new_otp, norm_phone, rate_limit, read_token, hash_password, verify_password)
+from .security import (
+    current_user, hash_otp, make_token, new_otp, norm_phone, rate_limit,
+    read_token, hash_password, verify_password, check_lockout, record_failure, clear_failures
+)
 from .sms import send_otp_sms
 from .common import *   # shared helpers (SKILLS, effective_status, get_booking, ...)
 
+DEFAULT_SECRET_KEYS = {"change-me-in-production", "mistribaiya-dev-secret-change-in-prod-xyz-987"}
+if not config.DEV_MODE and config.SECRET_KEY in DEFAULT_SECRET_KEYS:
+    logger.critical("FATAL: In production (DEV_MODE=0), SECRET_KEY must be configured with a secure secret! Exiting.")
+    sys.exit(1)
+
 app = FastAPI(title="MistriBaiya API", version="0.1.0")
 
-# Enable CORS for Firebase Hosting and other frontends
-cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+# Enable CORS for Firebase Hosting and trusted origins
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://mistribhaiya-f5a94.web.app",
+    "https://mistribhaiya-f5a94.firebaseapp.com",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+env_cors = os.getenv("CORS_ORIGINS", "")
+if env_cors and env_cors != "*":
+    cors_origins = [o.strip() for o in env_cors.split(",") if o.strip()]
+elif config.DEV_MODE:
+    cors_origins = ["*"]
+else:
+    cors_origins = DEFAULT_ALLOWED_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins if cors_origins else ["*"],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$" if not config.DEV_MODE else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -144,7 +168,8 @@ def meta():
     return {"skills": [{"key": k, "hi": v[0], "en": v[1]} for k, v in SKILLS.items()],
             "default_radius_km": config.DEFAULT_RADIUS_KM, "max_radius_km": config.MAX_RADIUS_KM,
             "call_mode": config.CALL_PROVIDER, "ice_servers": ice_servers(),
-            "instant_wave_seconds": config.INSTANT_WAVE_SECONDS, "assistant_langs": ["hi", "en", "mr", "gu", "bn", "ta", "te", "bho"], "require_start_otp": config.REQUIRE_START_OTP}
+            "instant_wave_seconds": config.INSTANT_WAVE_SECONDS, "assistant_langs": ["hi", "en", "mr", "gu", "bn", "ta", "te", "bho"],
+            "require_start_otp": config.REQUIRE_START_OTP, "dev_mode": config.DEV_MODE}
 
 @app.post("/api/auth/request-otp")
 def request_otp(req: OtpReq):
@@ -190,8 +215,11 @@ def get_user_profile(c, u):
     return prof
 
 @app.post("/api/auth/login-password")
-def login_password(req: LoginPasswordReq):
+def login_password(req: LoginPasswordReq, request: Request):
     phone = norm_phone(req.phone)
+    client_ip = request.client.host if request.client else "unknown"
+    check_lockout("pw_fail:" + phone, 5, 900)
+    check_lockout("pw_fail_ip:" + client_ip, 15, 900)
     rate_limit("pw:" + phone, 10, 300)
     with db() as c:
         u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
@@ -202,7 +230,10 @@ def login_password(req: LoginPasswordReq):
     if not u["password_hash"]:
         raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
     if not verify_password(req.password, u["password_hash"]):
+        record_failure("pw_fail:" + phone)
+        record_failure("pw_fail_ip:" + client_ip)
         raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
+    clear_failures("pw_fail:" + phone)
     with db() as c:
         prof = get_user_profile(c, u)
     return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
@@ -211,15 +242,15 @@ def login_password(req: LoginPasswordReq):
 @app.post("/api/auth/reset-password")
 def forgot_password(req: ForgotPasswordReq):
     phone = norm_phone(req.phone)
-    if not req.new_password or len(req.new_password.strip()) < 4:
-        raise HTTPException(400, "पासवर्ड कम से कम 4 अक्षरों का होना चाहिए (Password must be at least 4 characters)")
+    if not req.new_password or len(req.new_password.strip()) < 6:
+        raise HTTPException(400, "पासवर्ड कम से कम 6 अक्षरों का होना चाहिए (Password must be at least 6 characters)")
     with db() as c:
         o = c.execute("SELECT * FROM otps WHERE phone=?", (phone,)).fetchone()
         if not o or o["expires"] < time.time():
             raise HTTPException(400, "OTP expired. Request a new one.")
         if o["attempts"] >= 5:
             raise HTTPException(429, "Too many wrong attempts")
-        if o["code_hash"] != hash_otp(phone, req.otp.strip()):
+        if not secrets.compare_digest(o["code_hash"], hash_otp(phone, req.otp.strip())):
             c.execute("UPDATE otps SET attempts=attempts+1 WHERE phone=?", (phone,))
             c.commit()
             raise HTTPException(400, "गलत OTP (Wrong OTP)")
@@ -243,13 +274,15 @@ def verify(req: VerifyReq):
     phone = norm_phone(req.phone)
     if req.role not in ("worker", "customer", "contractor"):
         raise HTTPException(400, "role must be worker, customer or contractor")
+    if req.password and len(req.password.strip()) < 6:
+        raise HTTPException(400, "पासवर्ड कम से कम 6 अक्षरों का होना चाहिए (Password must be at least 6 characters)")
     with db() as c:
         o = c.execute("SELECT * FROM otps WHERE phone=?", (phone,)).fetchone()
         if not o or o["expires"] < time.time():
             raise HTTPException(400, "OTP expired. Request a new one.")
         if o["attempts"] >= 5:
             raise HTTPException(429, "Too many wrong attempts")
-        if o["code_hash"] != hash_otp(phone, req.otp.strip()):
+        if not secrets.compare_digest(o["code_hash"], hash_otp(phone, req.otp.strip())):
             c.execute("UPDATE otps SET attempts=attempts+1 WHERE phone=?", (phone,))
             c.commit()
             raise HTTPException(400, "Wrong OTP")
@@ -437,9 +470,11 @@ def nearby_jobs(radius_km: Optional[float] = None, lat: Optional[float] = None, 
             continue
         if worker_skills and not all_skills and not skill and j["skill"] not in worker_skills:
             continue
+        cust_phone = j["customer_phone"] or ""
+        masked_cust_phone = ("XXXXXX" + cust_phone[-4:]) if len(cust_phone) >= 4 else ""
         out.append({"id": j["id"], "customer_id": j["customer_id"], "skill": j["skill"], "description": j["description"], "address": j["address"],
                     "start_date": j["start_date"], "days": j["days"], "budget": j["budget"],
-                    "customer_name": j["customer_name"] or "Customer", "customer_phone": j["customer_phone"] or "",
+                    "customer_name": j["customer_name"] or "Customer", "customer_phone": masked_cust_phone,
                     "distance_km": round(d, 1) if d is not None else None,
                     "matches_skill": (not worker_skills or j["skill"] in worker_skills)})
     if any(x["distance_km"] is not None for x in out):
@@ -501,7 +536,8 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
         if free_only and st != "free":
             continue
         pub = worker_public(w, w, st, d)
-        pub["phone"] = w["phone"] if "phone" in w.keys() else ""
+        raw_phone = w["phone"] if "phone" in w.keys() else ""
+        pub["phone"] = ("XXXXXX" + raw_phone[-4:]) if len(raw_phone) >= 4 else ""
         out.append(pub)
 
     # Graceful fallback: if no workers within strict radius, return all matching workers ONLY IF expand=True
@@ -512,7 +548,8 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
                 continue
             d = haversine_km(w_lat, w_lng, w["lat"], w["lng"]) if (w["lat"] is not None and w["lng"] is not None) else None
             pub = worker_public(w, w, st, d)
-            pub["phone"] = w["phone"] if "phone" in w.keys() else ""
+            raw_phone = w["phone"] if "phone" in w.keys() else ""
+            pub["phone"] = ("XXXXXX" + raw_phone[-4:]) if len(raw_phone) >= 4 else ""
             pub["outside_radius"] = True
             out.append(pub)
     order = {"free": 0, "busy": 1, "offline": 2}
@@ -732,11 +769,18 @@ def my_bookings(u=Depends(current_user)):
         b = dict(r)
         w_user = users_map.get(b["worker_id"], {})
         c_user = users_map.get(b["customer_id"], {})
+        is_confirmed = b["status"] in ("accepted", "started")
+        w_phone = w_user.get("phone") or ""
+        c_phone = c_user.get("phone") or ""
+        if not is_confirmed:
+            w_phone = ("XXXXXX" + w_phone[-4:]) if len(w_phone) >= 4 else ""
+            c_phone = ("XXXXXX" + c_phone[-4:]) if len(c_phone) >= 4 else ""
+
         b["worker_name"] = w_user.get("name") or "मिस्त्री"
-        b["worker_phone"] = w_user.get("phone") or ""
+        b["worker_phone"] = w_phone
         b["worker_avatar"] = w_user.get("avatar") or ""
         b["customer_name"] = c_user.get("name") or "ग्राहक"
-        b["customer_phone"] = c_user.get("phone") or ""
+        b["customer_phone"] = c_phone
         b["customer_avatar"] = c_user.get("avatar") or ""
 
         # Map 'other' for ease of calling/chatting

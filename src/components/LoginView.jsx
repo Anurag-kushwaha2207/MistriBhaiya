@@ -131,7 +131,7 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     try {
       const res = await api('/auth/request-otp', 'POST', { phone: cleanPhone });
       setOtpSent(true);
-      if (res.dev_otp) {
+      if (res.dev_otp && meta?.dev_mode) {
         setOtp(String(res.dev_otp));
         showToast(`टेस्ट OTP: ${res.dev_otp}`);
       } else {

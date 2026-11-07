@@ -1,37 +1,26 @@
-// Firebase Firestore synchronization bridge
+// Firebase Firestore synchronization is managed securely by the backend API.
+// Client-side direct writes are disabled to protect data integrity and access controls.
+
 export function syncUser(user) {
-  if (typeof window.fbSyncUser === "function") {
-    window.fbSyncUser(user);
-  }
+  // Handled by backend API
 }
 
 export function syncWorkerProfile(userId, profile) {
-  if (typeof window.fbSyncWorkerProfile === "function") {
-    window.fbSyncWorkerProfile(userId, profile);
-  }
+  // Handled by backend API
 }
 
 export function syncContractorProfile(userId, profile) {
-  if (typeof window.fbSyncContractorProfile === "function") {
-    window.fbSyncContractorProfile(userId, profile);
-  }
+  // Handled by backend API
 }
 
 export function syncJob(job) {
-  if (typeof window.fbSyncJob === "function") {
-    window.fbSyncJob(job);
-  }
+  // Handled by backend API
 }
 
 export function syncBooking(booking) {
-  if (typeof window.fbSyncBooking === "function") {
-    window.fbSyncBooking(booking);
-  }
+  // Handled by backend API
 }
 
-
 export function syncProject(project) {
-  if (typeof window.fbSyncProject === "function") {
-    window.fbSyncProject(project);
-  }
+  // Handled by backend API
 }

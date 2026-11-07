@@ -104,22 +104,44 @@ def restore_user_if_missing(phone: str) -> Optional[dict]:
         user_doc = get_fs_doc("users", str(uid)) or {}
         with db() as c:
             existing = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
+            is_admin_val = 1 if phone in config.ADMIN_PHONES else 0
             if not existing:
-                c.execute(
-                    "INSERT INTO users(id, phone, name, role, password_hash, is_admin, avatar, created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?)",
-                    (
-                        uid,
-                        phone,
-                        user_doc.get("name") or cred.get("name") or "",
-                        cred.get("role") or user_doc.get("role") or "customer",
-                        cred.get("password_hash") or "",
-                        1 if user_doc.get("is_admin") else 0,
-                        user_doc.get("avatar") or "",
-                        user_doc.get("created_at") or time.time(),
-                    ),
-                )
+                # Prevent ID collision if uid is already taken by another phone
+                colliding = c.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
+                if colliding:
+                    cur = c.execute(
+                        "INSERT INTO users(phone, name, role, password_hash, is_admin, avatar, created_at) "
+                        "VALUES(?,?,?,?,?,?,?)",
+                        (
+                            phone,
+                            user_doc.get("name") or cred.get("name") or "",
+                            cred.get("role") or user_doc.get("role") or "customer",
+                            cred.get("password_hash") or "",
+                            is_admin_val,
+                            user_doc.get("avatar") or "",
+                            user_doc.get("created_at") or time.time(),
+                        ),
+                    )
+                    uid = cur.lastrowid
+                else:
+                    c.execute(
+                        "INSERT INTO users(id, phone, name, role, password_hash, is_admin, avatar, created_at) "
+                        "VALUES(?,?,?,?,?,?,?,?)",
+                        (
+                            uid,
+                            phone,
+                            user_doc.get("name") or cred.get("name") or "",
+                            cred.get("role") or user_doc.get("role") or "customer",
+                            cred.get("password_hash") or "",
+                            is_admin_val,
+                            user_doc.get("avatar") or "",
+                            user_doc.get("created_at") or time.time(),
+                        ),
+                    )
             else:
+                uid = existing["id"]
+                # Admin privilege strictly verified against config.ADMIN_PHONES
+                c.execute("UPDATE users SET is_admin=? WHERE id=?", (is_admin_val, uid))
                 if cred.get("password_hash") and not existing["password_hash"]:
                     c.execute("UPDATE users SET password_hash=? WHERE id=?", (cred["password_hash"], existing["id"]))
 
@@ -172,17 +194,24 @@ def restore_user_if_missing(phone: str) -> Optional[dict]:
 
 
 def restore_all_from_firestore():
-    """Background startup task: load all users and profiles from Firestore into SQLite."""
+    """Background startup task: load all users and profiles from Firestore into SQLite with pagination."""
     try:
-        url = f"{FIRESTORE_BASE_URL}/auth_credentials?pageSize=200"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode())
-            for doc in data.get("documents", []):
-                cred = fs_doc_to_dict(doc)
-                phone = cred.get("phone")
-                if phone:
-                    restore_user_if_missing(phone)
+        page_token = None
+        while True:
+            url = f"{FIRESTORE_BASE_URL}/auth_credentials?pageSize=300"
+            if page_token:
+                url += f"&pageToken={urllib.parse.quote(page_token)}"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                for doc in data.get("documents", []):
+                    cred = fs_doc_to_dict(doc)
+                    phone = cred.get("phone")
+                    if phone:
+                        restore_user_if_missing(phone)
+                page_token = data.get("nextPageToken")
+                if not page_token:
+                    break
         logger.info("Restored users from Firestore successfully.")
     except Exception as e:
         logger.info("Firestore restore on startup skipped: %s", e)

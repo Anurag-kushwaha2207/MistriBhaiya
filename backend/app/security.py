@@ -58,6 +58,21 @@ def rate_limit(key: str, limit: int, window_s: int):
     hits.append(now)
     _rate[key] = hits
 
+def check_lockout(key: str, limit: int, window_s: int):
+    now = time.time()
+    hits = [t for t in _rate.get(key, []) if now - t < window_s]
+    if len(hits) >= limit:
+        raise HTTPException(429, "Too many failed attempts. Temporarily locked for 15 minutes.")
+
+def record_failure(key: str):
+    now = time.time()
+    hits = _rate.get(key, [])
+    hits.append(now)
+    _rate[key] = hits
+
+def clear_failures(key: str):
+    _rate.pop(key, None)
+
 def current_user(authorization: str = Header(None)):
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "Login required")

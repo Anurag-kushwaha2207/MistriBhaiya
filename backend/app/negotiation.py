@@ -20,9 +20,14 @@ from .security import current_user, rate_limit
 router = APIRouter()
 MAX_ROUNDS = 8
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?\s*91[\s-]*)?[6-9](?:[\s-]*\d){9}(?!\d)")
+EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 
 def mask_phones(t: str) -> str:
-    return PHONE_RE.sub("[number hidden]", t)
+    if not t:
+        return ""
+    t = EMAIL_RE.sub("[email hidden]", t)
+    t = PHONE_RE.sub("[number hidden]", t)
+    return t
 
 KINDS = {"bookings": "booking", "projects": "project"}
 
