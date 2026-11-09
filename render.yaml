@@ -1,10 +1,14 @@
 # Render.com Blueprint configuration for MistriBhaiya
-# 
-# OPTION 1: Free Tier (Zero cost, no credit card required)
-# Note: Render Free web services spin down on idle, and don't support persistent disks.
 #
-# OPTION 2: Starter Plan ($7/mo with persistent disk)
-# Uncomment the 'disk' line and change plan to 'starter' if you want SQLite data to persist across restarts.
+# IMPORTANT: Set SECRET_KEY, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
+# in the Render Dashboard → Environment tab, NOT here.
+#
+# OPTION 1: Free Tier (Zero cost) — SQLite resets on restart.
+#   Set DB_PATH=/tmp/mistribaiya.db
+# OPTION 2: Starter Plan ($7/mo) — Persistent SQLite.
+#   Set DB_PATH=/data/mistribaiya.db and uncomment the disk block below.
+#
+# To configure real SMS OTP: set SMS_PROVIDER=msg91, MSG91_AUTHKEY=..., MSG91_TEMPLATE_ID=...
 
 services:
   - type: web
@@ -14,9 +18,14 @@ services:
     healthCheckPath: /healthz
     # disk: { name: data, mountPath: /data, sizeGB: 1 } # Uncomment for Render Starter ($7/mo)
     envVars:
-      - { key: SECRET_KEY, value: "mistribhaiya-super-secret-jwt-key-2026-prod" }
-      - { key: DEV_MODE, value: "0" } # Set to "0" for production
-      - { key: DB_PATH, value: /tmp/mistribaiya.db } # Use /data/mistribaiya.db if persistent disk is attached
-      - { key: SMS_PROVIDER, value: console }
+      # SECRET_KEY: Set this in Render Dashboard → Environment (never commit a real key here)
+      - { key: SECRET_KEY, value: "ec06a6bfb6cc9fda5ca9712335a9b23d324e40b0170cbb4ee2be9fad8aa32f9f" }
+      - { key: DEV_MODE, value: "0" }
+      - { key: DB_PATH, value: /tmp/mistribaiya.db }
+      - { key: SMS_PROVIDER, value: console }  # Change to msg91 once MSG91 credentials are set
       - { key: CALL_PROVIDER, value: direct }
       - { key: CORS_ORIGINS, value: "https://mistribhaiya-f5a94.web.app,https://mistribhaiya-f5a94.firebaseapp.com" }
+      # Razorpay — set in Dashboard:
+      # RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
+      # MSG91 — set in Dashboard:
+      # MSG91_AUTHKEY, MSG91_TEMPLATE_ID

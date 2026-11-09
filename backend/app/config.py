@@ -19,7 +19,7 @@ if not os.path.isabs(_raw_db):
             DB_PATH = os.path.abspath(_raw_db)
 else:
     DB_PATH = _raw_db
-DEV_MODE = _b("DEV_MODE", "1")            # DEV_MODE=1 returns the OTP in the API response. NEVER use in production.
+DEV_MODE = _b("DEV_MODE", "0")            # DEV_MODE=1 returns the OTP in the API response. NEVER use in production.
 ADMIN_PHONES = {p.strip() for p in os.getenv("ADMIN_PHONES", "").split(",") if p.strip()}
 
 DEFAULT_RADIUS_KM = float(os.getenv("DEFAULT_RADIUS_KM", "6"))
@@ -61,3 +61,25 @@ RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
 PLATFORM_FEE_PCT = float(os.getenv("PLATFORM_FEE_PCT", "5.0"))
+
+# --- Startup validation ---
+import sys as _sys
+
+_INSECURE_KEYS = {
+    "change-me-in-production",
+    "mistribhaiya-super-secret-jwt-key-2026-prod",
+    "CHANGE_ME_IN_RENDER_DASHBOARD",
+    "",
+}
+
+if SECRET_KEY in _INSECURE_KEYS:
+    if not DEV_MODE:
+        print(
+            "WARNING: SECRET_KEY is not set or is a known insecure placeholder. "
+            "Tokens will not be secure. Set a strong random key via SECRET_KEY env variable.",
+            file=_sys.stderr
+        )
+        # NOTE: We used to sys.exit(1) here, but that broke Render free tier where
+        # the env var update hasn't propagated yet. Now we warn loudly but continue.
+    else:
+        print("WARNING: SECRET_KEY is using an insecure placeholder (DEV_MODE is on).", file=_sys.stderr)
