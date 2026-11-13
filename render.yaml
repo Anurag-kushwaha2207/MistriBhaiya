@@ -22,7 +22,8 @@ services:
       - { key: SECRET_KEY, value: "ec06a6bfb6cc9fda5ca9712335a9b23d324e40b0170cbb4ee2be9fad8aa32f9f" }
       - { key: DEV_MODE, value: "1" }
       - { key: DB_PATH, value: /tmp/mistribaiya.db }
-      - { key: SMS_PROVIDER, value: console }  # Change to msg91 once MSG91 credentials are set
+      - { key: SMS_PROVIDER, value: fast2sms }
+      - { key: FAST2SMS_API_KEY, value: "7qNuMPij1G9AOJzrQ6xg3pWSVml0fEventHXhZ2CULboYFdK48XSue1a6Cs8kJIWchG0OB9xF3mgvTwD" }
       - { key: CALL_PROVIDER, value: direct }
       - { key: CORS_ORIGINS, value: "https://mistribhaiya-f5a94.web.app,https://mistribhaiya-f5a94.firebaseapp.com" }
       # Razorpay — set in Dashboard:
