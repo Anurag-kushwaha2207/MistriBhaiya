@@ -873,7 +873,7 @@ def my_bookings(u=Depends(current_user)):
         b["advance_paid"] = 1 if paid else 0
 
         # Start OTP is strictly hidden until the customer pays the ₹10 fee
-        if u["role"] == "worker" or b["status"] != "accepted" or b.get("started_at") or (not paid and not config.DEV_MODE):
+        if u["role"] == "worker" or b["status"] != "accepted" or b.get("started_at") or not paid:
             b["start_otp"] = ""
         out.append(b)
     return {"bookings": out}

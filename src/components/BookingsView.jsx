@@ -220,14 +220,14 @@ export default function BookingsView({
             {b.note && <div className="sub" style={{ fontSize: '12px', fontStyle: 'italic' }}>📝 "{b.note}"</div>}
 
             {/* OTP display for customer once accepted & ₹10 paid */}
-            {!isWorker && b.status === 'accepted' && b.start_otp && (
+            {!isWorker && b.status === 'accepted' && Boolean(b.advance_paid) && Boolean(b.start_otp) && (
               <div style={{ background: '#e8f5e9', border: '1px dashed #2e7d32', borderRadius: '8px', padding: '10px 12px', margin: '10px 0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <b style={{ color: '#2e7d32', fontSize: '15px' }}>🔑 काम शुरू करने का OTP: {b.start_otp}</b>
                   <span style={{ fontSize: '11px', color: '#1b5e20', background: '#c8e6c9', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>✔ ₹10 टोकन जमा</span>
                 </div>
                 <div className="sub" style={{ fontSize: '11px', marginTop: '3px' }}>
-                  मिस्त्री को काम शुरू करते समय यह 4-अंकों का OTP बताएं।
+                  मिस्त्री को काम शुरू करते समय यह 4-अंकों का OTP बताएं। (बाकी मजदूरी सीधे मिस्त्री को नकद दें)।
                 </div>
               </div>
             )}
@@ -266,95 +266,31 @@ export default function BookingsView({
               </div>
             )}
 
-            {/* Payment Information & Actions */}
-            {payments[b.id] ? (
+            {/* Payment Receipt Link if ₹10 paid */}
+            {payments[b.id] && (
               <div style={{
-                background: payments[b.id].status === 'held' ? '#e8f5e9' : payments[b.id].status === 'cash_pending' ? '#fffde7' : '#f5f5f5',
-                border: `1px solid ${payments[b.id].status === 'held' ? '#a5d6a7' : payments[b.id].status === 'cash_pending' ? '#fff59d' : '#e0e0e0'}`,
+                background: '#f9fbe7',
+                border: '1px solid #e6ee9c',
                 borderRadius: '8px',
-                padding: '8px 12px',
+                padding: '6px 12px',
                 margin: '8px 0',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '6px'
+                fontSize: '12px'
               }}>
-                <div style={{ fontSize: '13px' }}>
-                  {payments[b.id].status === 'held' && (
-                    <span style={{ color: '#1b5e20', fontWeight: 'bold' }}>
-                      🔒 एस्क्रो सुरक्षित: ₹{payments[b.id].amount_paise / 100}
-                    </span>
-                  )}
-                  {(payments[b.id].status === 'completed' || payments[b.id].status === 'released') && (
-                    <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>
-                      ✅ भुगतान सफल: ₹{payments[b.id].amount_paise / 100}
-                    </span>
-                  )}
-                  {payments[b.id].status === 'cash_pending' && (
-                    <span style={{ color: '#f57f17', fontWeight: 'bold' }}>
-                      💵 नकद भुगतान बाकी: ₹{payments[b.id].amount_paise / 100}
-                    </span>
-                  )}
-                  {payments[b.id].status === 'cash_confirmed' && (
-                    <span style={{ color: '#1b5e20', fontWeight: 'bold' }}>
-                      ✅ नकद प्राप्त हुआ: ₹{payments[b.id].amount_paise / 100}
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  {isWorker && payments[b.id].status === 'cash_pending' && (
-                    <button
-                      type="button"
-                      style={{ background: '#2e7d32', color: '#fff', padding: '4px 8px', fontSize: '11px', borderRadius: '4px' }}
-                      onClick={() => handleConfirmCash(payments[b.id].id)}
-                    >
-                      ✔ नकद मिला
-                    </button>
-                  )}
-                  {!isWorker && payments[b.id].status === 'held' && (b.status === 'completed' || b.status === 'started') && (
-                    <button
-                      type="button"
-                      style={{ background: '#1b5e20', color: '#fff', padding: '4px 8px', fontSize: '11px', borderRadius: '4px' }}
-                      onClick={() => handleReleaseEscrow(payments[b.id].id)}
-                    >
-                      रिलीज़ करें
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="sec"
-                    style={{ padding: '3px 8px', fontSize: '11px' }}
-                    onClick={() => handleOpenReceipt(payments[b.id].id)}
-                  >
-                    🧾 रसीद
-                  </button>
-                </div>
+                <span style={{ color: '#33691e', fontWeight: 'bold' }}>
+                  🧾 बुकिंग टोकन: ₹{payments[b.id].amount_paise / 100} जमा
+                </span>
+                <button
+                  type="button"
+                  className="sec"
+                  style={{ padding: '2px 8px', fontSize: '11px' }}
+                  onClick={() => handleOpenReceipt(payments[b.id].id)}
+                >
+                  रसीद देखें
+                </button>
               </div>
-            ) : (
-              !isWorker && (b.status === 'accepted' || b.status === 'started') && (
-                <div style={{ margin: '8px 0' }}>
-                  <button
-                    type="button"
-                    style={{
-                      background: '#1b5e20',
-                      color: '#fff',
-                      fontSize: '13px',
-                      padding: '7px 12px',
-                      borderRadius: '6px',
-                      width: '100%',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                    onClick={() => setPayModalBooking(b)}
-                  >
-                    💳 अग्रिम / सुरक्षित भुगतान करें (₹{(b.agreed_rate || b.daily_rate || 500) * (b.days || 1)})
-                  </button>
-                </div>
-              )
             )}
 
             {/* CASE 1: STATUS REQUESTED (Negotiation / Pending) */}
