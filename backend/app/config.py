@@ -57,6 +57,9 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "claude-sonnet-4-6")
 
+FIREBASE_API_KEY = os.getenv("FIREBASE_API_KEY", "AIzaSyAetA0gHaRd0ai4YMur1a2HSY01R6id528")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "mistribhaiya-f5a94")
+
 # Payments (Razorpay + UPI Escrow & Cash)
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")

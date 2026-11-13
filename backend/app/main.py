@@ -94,6 +94,7 @@ class ForgotPasswordReq(BaseModel):
     phone: str
     otp: str
     new_password: str
+    firebase_token: Optional[str] = None
 
 class VerifyReq(BaseModel):
     phone: str
@@ -111,6 +112,26 @@ class VerifyReq(BaseModel):
     company: Optional[str] = None
     min_budget: Optional[int] = None
     about: Optional[str] = None
+    firebase_token: Optional[str] = None
+
+def verify_firebase_token(token: Optional[str]) -> Optional[str]:
+    if not token:
+        return None
+    try:
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={config.FIREBASE_API_KEY}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"idToken": token}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            users = data.get("users", [])
+            if users and "phoneNumber" in users[0]:
+                return norm_phone(users[0]["phoneNumber"])
+    except Exception as e:
+        logger.warning("Firebase token verification failed: %s", e)
+    return None
 
 class MeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=60)
@@ -268,8 +289,13 @@ def forgot_password(req: ForgotPasswordReq):
         raise HTTPException(400, "पासवर्ड कम से कम 6 अक्षरों का होना चाहिए (Password must be at least 6 characters)")
     with db() as c:
         o = c.execute("SELECT * FROM otps WHERE phone=?", (phone,)).fetchone()
+        is_fb = False
+        if req.firebase_token:
+            fb_p = verify_firebase_token(req.firebase_token)
+            if fb_p == phone:
+                is_fb = True
         is_master = (config.DEV_MODE or config.SMS_PROVIDER == "console") and req.otp.strip() == "123456"
-        if not is_master:
+        if not (is_fb or is_master):
             if not o or o["expires"] < time.time():
                 raise HTTPException(400, "OTP expired. Request a new one.")
             if o["attempts"] >= 5:
@@ -303,8 +329,13 @@ def verify(req: VerifyReq):
         raise HTTPException(400, "पासवर्ड कम से कम 6 अक्षरों का होना चाहिए (Password must be at least 6 characters)")
     with db() as c:
         o = c.execute("SELECT * FROM otps WHERE phone=?", (phone,)).fetchone()
+        is_fb = False
+        if req.firebase_token:
+            fb_p = verify_firebase_token(req.firebase_token)
+            if fb_p == phone:
+                is_fb = True
         is_master = (config.DEV_MODE or config.SMS_PROVIDER == "console") and req.otp.strip() == "123456"
-        if not is_master:
+        if not (is_fb or is_master):
             if not o or o["expires"] < time.time():
                 raise HTTPException(400, "OTP expired. Request a new one.")
             if o["attempts"] >= 5:

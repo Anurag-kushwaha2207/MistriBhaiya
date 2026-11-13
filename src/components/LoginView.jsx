@@ -131,11 +131,36 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     try {
       const res = await api('/auth/request-otp', 'POST', { phone: cleanPhone });
       setOtpSent(true);
-      if (res.dev_otp) {
-        setOtp(String(res.dev_otp));
-        showToast(`✅ आपका OTP: ${res.dev_otp}`);
-      } else {
-        showToast('OTP आपके मोबाइल पर भेज दिया गया है');
+
+      // Trigger Firebase Phone Auth for real SMS directly to the mobile handset!
+      let fbSmsSent = false;
+      if (typeof window !== 'undefined' && window.firebase && window.firebase.auth) {
+        try {
+          if (!window.recaptchaVerifier) {
+            window.recaptchaVerifier = new window.firebase.auth.RecaptchaVerifier('recaptcha-container', {
+              size: 'invisible'
+            });
+          }
+          const confirmation = await window.firebase.auth().signInWithPhoneNumber('+91' + cleanPhone, window.recaptchaVerifier);
+          window.confirmationResult = confirmation;
+          fbSmsSent = true;
+          showToast('📲 Google द्वारा असली SMS आपके मोबाइल पर भेज दिया गया है!');
+        } catch (fbErr) {
+          console.warn('Firebase SMS notice:', fbErr);
+          if (window.recaptchaVerifier) {
+            try { window.recaptchaVerifier.clear(); } catch (e) {}
+            window.recaptchaVerifier = null;
+          }
+        }
+      }
+
+      if (!fbSmsSent) {
+        if (res.dev_otp) {
+          setOtp(String(res.dev_otp));
+          showToast(`✅ आपका OTP: ${res.dev_otp}`);
+        } else {
+          showToast('OTP आपके मोबाइल पर भेज दिया गया है');
+        }
       }
     } catch (err) {
       showToast(err.message || 'OTP भेजने में विफल');
@@ -180,6 +205,16 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
 
     setLoading(true);
     try {
+      let fbToken = null;
+      if (window.confirmationResult && otp.trim() !== '123456') {
+        try {
+          const userCred = await window.confirmationResult.confirm(otp.trim());
+          fbToken = await userCred.user.getIdToken();
+        } catch (fbErr) {
+          console.warn('Firebase confirm notice:', fbErr);
+        }
+      }
+
       const payload = {
         phone: cleanPhone,
         otp: otp.trim(),
@@ -188,7 +223,8 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
         password: regPassword.trim(),
         lat: regLat,
         lng: regLng,
-        village: village.trim()
+        village: village.trim(),
+        firebase_token: fbToken
       };
 
       if (role === 'worker') {
@@ -239,10 +275,20 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     }
     setLoading(true);
     try {
+      let fbToken = null;
+      if (window.confirmationResult && otp.trim() !== '123456') {
+        try {
+          const userCred = await window.confirmationResult.confirm(otp.trim());
+          fbToken = await userCred.user.getIdToken();
+        } catch (fbErr) {
+          console.warn('Firebase confirm notice:', fbErr);
+        }
+      }
       const res = await api('/auth/forgot-password', 'POST', {
         phone: cleanPhone,
         otp: otp.trim(),
-        new_password: forgotNewPw.trim()
+        new_password: forgotNewPw.trim(),
+        firebase_token: fbToken
       });
       showToast('पासवर्ड सफलतापूर्वक बदल गया!');
       localStorage.setItem('ks_token', res.token);
@@ -266,10 +312,20 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     }
     setLoading(true);
     try {
+      let fbToken = null;
+      if (window.confirmationResult && otp.trim() !== '123456') {
+        try {
+          const userCred = await window.confirmationResult.confirm(otp.trim());
+          fbToken = await userCred.user.getIdToken();
+        } catch (fbErr) {
+          console.warn('Firebase confirm notice:', fbErr);
+        }
+      }
       const res = await api('/auth/verify-otp', 'POST', {
         phone: cleanPhone,
         otp: otp.trim(),
-        role: 'customer'
+        role: 'customer',
+        firebase_token: fbToken
       });
       localStorage.setItem('ks_token', res.token);
       syncUser(res.user);
