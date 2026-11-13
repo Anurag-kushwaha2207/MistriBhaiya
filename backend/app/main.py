@@ -825,6 +825,15 @@ def my_bookings(u=Depends(current_user)):
         if ids:
             q = ",".join("?" * len(ids))
             users_map = {r["id"]: dict(r) for r in c.execute(f"SELECT id,name,phone,avatar FROM users WHERE id IN ({q})", list(ids))}
+        booking_ids = [r["id"] for r in rows]
+        paid_booking_ids = set()
+        if booking_ids:
+            bq = ",".join("?" * len(booking_ids))
+            paid_rows = c.execute(
+                f"SELECT booking_id FROM payments WHERE booking_id IN ({bq}) AND status IN ('held', 'completed', 'released') AND amount_paise >= 1000",
+                booking_ids
+            ).fetchall()
+            paid_booking_ids = {p["booking_id"] for p in paid_rows}
     out = []
     for r in rows:
         b = dict(r)
@@ -859,7 +868,12 @@ def my_bookings(u=Depends(current_user)):
         # Ensure both agreed_rate and daily_rate are present
         b["daily_rate"] = b["agreed_rate"] or 0
 
-        if u["role"] == "worker" or b["status"] != "accepted" or b.get("started_at"):
+        # Check if ₹10 booking confirmation fee is paid by customer
+        paid = b["id"] in paid_booking_ids
+        b["advance_paid"] = 1 if paid else 0
+
+        # Start OTP is strictly hidden until the customer pays the ₹10 fee
+        if u["role"] == "worker" or b["status"] != "accepted" or b.get("started_at") or (not paid and not config.DEV_MODE):
             b["start_otp"] = ""
         out.append(b)
     return {"bookings": out}

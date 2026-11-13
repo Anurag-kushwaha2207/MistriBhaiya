@@ -99,19 +99,9 @@ async def create_payment_order(req: PaymentOrderReq, u=Depends(current_user)):
             if b["customer_id"] != u["id"]:
                 raise HTTPException(403, "Not your booking")
             worker_id = b["worker_id"]
-            # SECURITY: Validate client-supplied amount_paise against the booking's agreed rate
-            # Prevent paying ₹1 for a ₹500/day booking
-            booking_total_paise = (b["agreed_rate"] or b.get("daily_rate") or 0) * (b["days"] or 1) * 100
-            if booking_total_paise > 0:
-                # Allow ±10% tolerance (for partial advance payments, platform negotiation)
-                min_allowed = max(100, int(booking_total_paise * 0.10))   # at least 10% advance
-                max_allowed = int(booking_total_paise * 1.05)             # at most 5% over (rounding)
-                if not (min_allowed <= req.amount_paise <= max_allowed):
-                    raise HTTPException(400, (
-                        f"Invalid amount ₹{req.amount_paise//100}. "
-                        f"Booking total is ₹{booking_total_paise//100}. "
-                        f"Advance must be between ₹{min_allowed//100} and ₹{max_allowed//100}."
-                    ))
+            # Booking token fee: fixed ₹10 (1000 paise) or between ₹10 and booking total
+            if req.amount_paise < 1000:
+                raise HTTPException(400, "Minimum booking confirmation fee is ₹10 (1000 paise)")
         elif req.milestone_id:
             m = c.execute("SELECT m.*, p.customer_id, p.contractor_id FROM project_milestones m JOIN projects p ON p.id=m.project_id WHERE m.id=?",
                           (req.milestone_id,)).fetchone()
@@ -173,13 +163,16 @@ async def create_payment_order(req: PaymentOrderReq, u=Depends(current_user)):
 
     return {
         "id": pid,
+        "payment_id": pid,
         "status": "created",
         "amount_paise": req.amount_paise,
         "fee_paise": fee_paise,
         "net_paise": net_paise,
         "currency": "INR",
         "gateway_order_id": gateway_order_id,
+        "order_id": gateway_order_id,
         "razorpay_key": config.RAZORPAY_KEY_ID or "rzp_test_mock",
+        "key_id": config.RAZORPAY_KEY_ID or "rzp_test_mock",
         "method": "online"
     }
 

@@ -219,13 +219,50 @@ export default function BookingsView({
             {b.address && <div className="sub" style={{ fontSize: '12px' }}>📍 {b.address}</div>}
             {b.note && <div className="sub" style={{ fontSize: '12px', fontStyle: 'italic' }}>📝 "{b.note}"</div>}
 
-            {/* OTP display for customer once accepted */}
-            {!isWorker && b.start_otp && (b.status === 'accepted' || b.status === 'requested') && (
+            {/* OTP display for customer once accepted & ₹10 paid */}
+            {!isWorker && b.status === 'accepted' && b.start_otp && (
               <div style={{ background: '#e8f5e9', border: '1px dashed #2e7d32', borderRadius: '8px', padding: '10px 12px', margin: '10px 0' }}>
-                <b style={{ color: '#2e7d32', fontSize: '15px' }}>🔑 काम शुरू करने का OTP: {b.start_otp}</b>
-                <div className="sub" style={{ fontSize: '11px', marginTop: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <b style={{ color: '#2e7d32', fontSize: '15px' }}>🔑 काम शुरू करने का OTP: {b.start_otp}</b>
+                  <span style={{ fontSize: '11px', color: '#1b5e20', background: '#c8e6c9', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>✔ ₹10 टोकन जमा</span>
+                </div>
+                <div className="sub" style={{ fontSize: '11px', marginTop: '3px' }}>
                   मिस्त्री को काम शुरू करते समय यह 4-अंकों का OTP बताएं।
                 </div>
+              </div>
+            )}
+
+            {/* Locked OTP prompt for customer when accepted but NOT yet paid ₹10 */}
+            {!isWorker && b.status === 'accepted' && !b.advance_paid && !b.started_at && (
+              <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: '8px', padding: '12px', margin: '10px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '22px' }}>🔒</span>
+                  <div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#b78103' }}>
+                      काम शुरू करने का OTP लॉक है
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#555' }}>
+                      मिस्त्री ने बुकिंग स्वीकार कर ली है। OTP देखने और बुकिंग पक्की करने के लिए ₹10 जमा करें।
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  style={{
+                    background: '#2e7d32',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 14px',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    width: '100%',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setPayModalBooking(b)}
+                >
+                  💳 ₹10 ऑनलाइन भुगतान करें (OTP अनलॉक करें)
+                </button>
               </div>
             )}
 

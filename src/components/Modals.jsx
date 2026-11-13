@@ -442,43 +442,40 @@ export function OfferModal({ offer, token, onClose, onAccept, showToast, t }) {
 export function PaymentPayModal({ booking, user, token, onClose, onSuccess, showToast, t }) {
   const [method, setMethod] = useState('online');
   const [loading, setLoading] = useState(false);
-  const totalAmount = (booking?.agreed_rate || booking?.daily_rate || 500) * (booking?.days || 1);
+  const bookingFee = 10; // Fixed ₹10 booking token amount
 
   const handlePay = async () => {
     setLoading(true);
     try {
-      const amountPaise = totalAmount * 100;
+      const amountPaise = bookingFee * 100; // 1000 paise = ₹10
       const res = await api('/payments/order', 'POST', {
         booking_id: booking.id,
         amount_paise: amountPaise,
-        method: method
+        method: 'online'
       }, token);
 
-      if (method === 'cash') {
-        showToast('नकद भुगतान दर्ज किया गया। काम पूरा होने पर मिस्त्री को नकद दें।');
-        if (onSuccess) onSuccess();
-        onClose();
-        return;
-      }
+      const rzpKey = res.key_id || res.razorpay_key;
+      const orderId = res.order_id || res.gateway_order_id;
+      const paymentRecordId = res.payment_id || res.id;
 
       // Online Razorpay flow
-      if (res.key_id && window.Razorpay) {
+      if (rzpKey && window.Razorpay && !rzpKey.includes('mock')) {
         const options = {
-          key: res.key_id,
-          amount: res.amount_paise,
+          key: rzpKey,
+          amount: amountPaise,
           currency: 'INR',
           name: 'MistriBhaiya',
-          description: `बुकिंग #${booking.id} एस्क्रो भुगतान`,
-          order_id: res.order_id,
+          description: `बुकिंग #${booking.id} टोकन शुल्क`,
+          order_id: orderId,
           handler: async (resp) => {
             try {
               await api('/payments/verify', 'POST', {
-                payment_id: res.payment_id,
+                payment_id: paymentRecordId,
                 razorpay_order_id: resp.razorpay_order_id,
                 razorpay_payment_id: resp.razorpay_payment_id,
                 razorpay_signature: resp.razorpay_signature
               }, token);
-              showToast('भुगतान सफल! राशि एस्क्रो में सुरक्षित है 🔒');
+              showToast('🎉 ₹10 भुगतान सफल! काम शुरू करने का OTP अनलॉक हो गया!');
               if (onSuccess) onSuccess();
               onClose();
             } catch (err) {
@@ -493,12 +490,12 @@ export function PaymentPayModal({ booking, user, token, onClose, onSuccess, show
       } else {
         // Dev mode: auto-verify mock payment
         await api('/payments/verify', 'POST', {
-          payment_id: res.id,
-          razorpay_order_id: res.gateway_order_id || `order_mock_${Date.now()}`,
+          payment_id: paymentRecordId,
+          razorpay_order_id: orderId || `order_mock_${Date.now()}`,
           razorpay_payment_id: 'pay_mock_' + Date.now(),
           razorpay_signature: 'sig_mock'
         }, token);
-        showToast('भुगतान सफल! राशि एस्क्रो में सुरक्षित है 🔒');
+        showToast('🎉 ₹10 भुगतान सफल! काम शुरू करने का OTP अनलॉक हो गया!');
         if (onSuccess) onSuccess();
         onClose();
       }
@@ -513,34 +510,21 @@ export function PaymentPayModal({ booking, user, token, onClose, onSuccess, show
     <div className="modal" onClick={(e) => { if (e.target.className === 'modal') onClose(); }}>
       <div className="sheet" style={{ maxWidth: '420px', borderRadius: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
-          <h3 style={{ margin: 0, fontSize: '18px', color: '#1b5e20' }}>💳 अग्रिम / भुगतान</h3>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#1b5e20' }}>💳 मिस्त्री बुकिंग टोकन शुल्क</h3>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
         <div style={{ textAlign: 'center', margin: '14px 0' }}>
-          <div style={{ fontSize: '13px', color: '#666' }}>कुल राशि</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1b5e20' }}>₹{totalAmount}</div>
+          <div style={{ fontSize: '13px', color: '#666' }}>बुकिंग पुष्टि व OTP अनलॉक शुल्क</div>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1b5e20', margin: '4px 0' }}>₹{bookingFee}</div>
           <div style={{ fontSize: '12px', color: '#888' }}>
-            ({booking?.days || 1} दिन × ₹{booking?.agreed_rate || booking?.daily_rate || 500}/दिन)
+            मिस्त्री: {booking?.other_name || booking?.worker_name || 'कारीगर'}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '16px 0' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', border: method === 'online' ? '2px solid #2e7d32' : '1px solid #ddd', borderRadius: '10px', cursor: 'pointer', background: method === 'online' ? '#e8f5e9' : '#fff' }}>
-            <input type="radio" name="paymethod" checked={method === 'online'} onChange={() => setMethod('online')} />
-            <div>
-              <b style={{ color: '#1b5e20' }}>🔒 ऑनलाइन एस्क्रो (UPI / कार्ड)</b>
-              <div style={{ fontSize: '12px', color: '#666' }}>काम पूरा होने तक राशि सुरक्षित रहेगी।</div>
-            </div>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', border: method === 'cash' ? '2px solid #2e7d32' : '1px solid #ddd', borderRadius: '10px', cursor: 'pointer', background: method === 'cash' ? '#e8f5e9' : '#fff' }}>
-            <input type="radio" name="paymethod" checked={method === 'cash'} onChange={() => setMethod('cash')} />
-            <div>
-              <b style={{ color: '#333' }}>💵 नकद भुगतान</b>
-              <div style={{ fontSize: '12px', color: '#666' }}>काम पूरा होने पर सीधे मिस्त्री को नकद दें।</div>
-            </div>
-          </label>
+        <div style={{ background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: '10px', padding: '12px', margin: '14px 0', fontSize: '12px', lineHeight: '1.6', color: '#2e7d32' }}>
+          ℹ️ <b>यह ₹10 कंपनी खाते में सुरक्षित जमा होंगे।</b> जैसे ही आप यह ₹10 देंगे, मिस्त्री को काम शुरू कराने वाला 4-अंकों का OTP आपको तुरंत स्क्रीन पर दिख जाएगा।
         </div>
-        <button className="big" style={{ background: '#2e7d32', width: '100%' }} onClick={handlePay} disabled={loading}>
-          {loading ? 'प्रक्रिया जारी है...' : (method === 'online' ? `₹${totalAmount} सुरक्षित भुगतान करें` : 'नकद विकल्प चुनें')}
+        <button className="big" style={{ background: '#2e7d32', width: '100%', padding: '12px', fontSize: '15px' }} onClick={handlePay} disabled={loading}>
+          {loading ? 'प्रक्रिया जारी है...' : `💳 ₹${bookingFee} ऑनलाइन भुगतान करें (Razorpay)`}
         </button>
       </div>
     </div>
