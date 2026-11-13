@@ -128,12 +128,12 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
       return;
     }
     setLoading(true);
+    setOtp('');
     try {
-      const res = await api('/auth/request-otp', 'POST', { phone: cleanPhone });
+      await api('/auth/request-otp', 'POST', { phone: cleanPhone });
       setOtpSent(true);
 
       // Trigger Firebase Phone Auth for real SMS directly to the mobile handset!
-      let fbSmsSent = false;
       if (typeof window !== 'undefined' && window.firebase && window.firebase.auth) {
         try {
           if (!window.recaptchaVerifier) {
@@ -143,25 +143,26 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
           }
           const confirmation = await window.firebase.auth().signInWithPhoneNumber('+91' + cleanPhone, window.recaptchaVerifier);
           window.confirmationResult = confirmation;
-          fbSmsSent = true;
           showToast('📲 Google द्वारा असली SMS आपके मोबाइल पर भेज दिया गया है!');
+          return;
         } catch (fbErr) {
-          console.warn('Firebase SMS notice:', fbErr);
+          console.error('Firebase SMS error:', fbErr);
           if (window.recaptchaVerifier) {
             try { window.recaptchaVerifier.clear(); } catch (e) {}
             window.recaptchaVerifier = null;
           }
+          if (fbErr.code === 'auth/operation-not-allowed' || fbErr.message?.includes('region')) {
+            showToast('⚠️ Firebase में India (+91) SMS region enable करें');
+          } else if (fbErr.code === 'auth/quota-exceeded') {
+            showToast('⚠️ आज का SMS कोटा पूरा हो गया है।');
+          } else {
+            showToast('SMS त्रुटि: ' + (fbErr.message || fbErr.code));
+          }
+          return;
         }
       }
 
-      if (!fbSmsSent) {
-        if (res.dev_otp) {
-          setOtp(String(res.dev_otp));
-          showToast(`✅ आपका OTP: ${res.dev_otp}`);
-        } else {
-          showToast('OTP आपके मोबाइल पर भेज दिया गया है');
-        }
-      }
+      showToast('OTP आपके मोबाइल पर भेज दिया गया है');
     } catch (err) {
       showToast(err.message || 'OTP भेजने में विफल');
     } finally {
