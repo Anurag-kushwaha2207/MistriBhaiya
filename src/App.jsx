@@ -23,6 +23,7 @@ import AssistantView from './components/AssistantView';
 import CallModal from './components/CallModal';
 import ChatModal from './components/ChatModal';
 import { BookingModal, ProjectModal, CounterModal, OfferModal } from './components/Modals';
+import NotificationsPopover from './components/NotificationsPopover';
 import { playRingChime, playMessageChime } from './sounds';
 
 export default function App() {
@@ -451,8 +452,8 @@ export default function App() {
         onOpenProfile={() => setIsProfileOpen(true)}
         unreadNotifs={unreadNotifs}
         onOpenNotifs={() => {
-          setIsNotifOpen(true);
-          markNotifsRead();
+          setIsNotifOpen(prev => !prev);
+          fetchNotifications();
         }}
         t={t}
       />
@@ -759,54 +760,15 @@ export default function App() {
         </div>
       )}
 
-      {/* Notifications Drawer/Modal (A6) */}
-      {isNotifOpen && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: '440px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '12px', borderBottom: '1px solid #e0e0e0' }}>
-              <h3 style={{ margin: 0 }}>🔔 सूचनाएं (Notifications)</h3>
-              <button className="sec" style={{ padding: '4px 10px' }} onClick={() => setIsNotifOpen(false)}>✕</button>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
-              {notifications.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px 10px', color: '#888' }}>
-                  कोई नई सूचना नहीं है
-                </div>
-              ) : (
-                notifications.map(n => {
-                  let p = {};
-                  try { p = JSON.parse(n.payload_json || '{}'); } catch (e) {}
-                  return (
-                    <div
-                      key={n.id}
-                      style={{
-                        padding: '10px 12px',
-                        marginBottom: '8px',
-                        borderRadius: '8px',
-                        background: n.read ? '#f8f9fa' : '#e8f5e9',
-                        borderLeft: n.read ? '3px solid #ccc' : '3px solid #2e7d32'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#777' }}>
-                        <span>{n.type}</span>
-                        <span>{n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                      </div>
-                      <div style={{ fontSize: '14px', marginTop: '4px', fontWeight: n.read ? 'normal' : '600' }}>
-                        {p.text || p.note || p.title || (p.customer ? `${p.customer} ने संपर्क किया` : `${n.type} अपडेट`)}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            <div style={{ paddingTop: '10px', borderTop: '1px solid #e0e0e0', textAlign: 'right' }}>
-              <button className="sec" style={{ width: '100%' }} onClick={() => setIsNotifOpen(false)}>
-                बंद करें
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modern Top-Right Notifications Popover (Dropdown) */}
+      <NotificationsPopover
+        isOpen={isNotifOpen}
+        onClose={() => setIsNotifOpen(false)}
+        notifications={notifications}
+        unreadCount={unreadNotifs}
+        onMarkAllRead={markNotifsRead}
+        onSelectTab={(newTab) => setTab(newTab)}
+      />
 
       {/* WhatsApp Style In-App Chat Modal */}
       {activeChatBooking && (
