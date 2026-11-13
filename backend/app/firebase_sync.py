@@ -8,6 +8,7 @@ import json
 import logging
 import threading
 import time
+import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
@@ -70,14 +71,21 @@ def fs_doc_to_dict(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_fs_doc(collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
-    """Fetch a single document from Firestore."""
+    """Fetch a single document from Firestore. Returns None silently on 403/404 (rules disabled)."""
     try:
         url = f"{FIRESTORE_BASE_URL}/{collection}/{doc_id}"
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=5) as resp:
             doc = json.loads(resp.read().decode())
             return fs_doc_to_dict(doc)
-    except Exception:
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403, 404):
+            logger.debug("Firestore %s/%s: HTTP %s (rules disabled or not found)", collection, doc_id, e.code)
+        else:
+            logger.warning("Firestore %s/%s: HTTP %s", collection, doc_id, e.code)
+        return None
+    except Exception as e:
+        logger.debug("Firestore get_fs_doc %s/%s: %s", collection, doc_id, e)
         return None
 
 
@@ -189,7 +197,7 @@ def restore_user_if_missing(phone: str) -> Optional[dict]:
             u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
             return dict(u) if u else None
     except Exception as e:
-        logger.warning("Error restoring user %s from Firestore: %s", phone, e)
+        logger.debug("restore_user_if_missing %s: %s", phone, e)
         return None
 
 
@@ -230,6 +238,12 @@ def _write_doc_sync(collection: str, doc_id: str, data: Dict[str, Any]):
         )
         with urllib.request.urlopen(req, timeout=8) as resp:
             return resp.status
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            logger.debug("Firestore %s/%s: HTTP %s (rules disabled — ignoring)", collection, doc_id, e.code)
+        else:
+            logger.warning("Firebase Firestore sync failed for %s/%s: HTTP %s", collection, doc_id, e.code)
+        return None
     except Exception as e:
         logger.warning("Firebase Firestore sync failed for %s/%s: %s", collection, doc_id, e)
         return None

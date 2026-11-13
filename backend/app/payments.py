@@ -99,6 +99,19 @@ async def create_payment_order(req: PaymentOrderReq, u=Depends(current_user)):
             if b["customer_id"] != u["id"]:
                 raise HTTPException(403, "Not your booking")
             worker_id = b["worker_id"]
+            # SECURITY: Validate client-supplied amount_paise against the booking's agreed rate
+            # Prevent paying ₹1 for a ₹500/day booking
+            booking_total_paise = (b["agreed_rate"] or b.get("daily_rate") or 0) * (b["days"] or 1) * 100
+            if booking_total_paise > 0:
+                # Allow ±10% tolerance (for partial advance payments, platform negotiation)
+                min_allowed = max(100, int(booking_total_paise * 0.10))   # at least 10% advance
+                max_allowed = int(booking_total_paise * 1.05)             # at most 5% over (rounding)
+                if not (min_allowed <= req.amount_paise <= max_allowed):
+                    raise HTTPException(400, (
+                        f"Invalid amount ₹{req.amount_paise//100}. "
+                        f"Booking total is ₹{booking_total_paise//100}. "
+                        f"Advance must be between ₹{min_allowed//100} and ₹{max_allowed//100}."
+                    ))
         elif req.milestone_id:
             m = c.execute("SELECT m.*, p.customer_id, p.contractor_id FROM project_milestones m JOIN projects p ON p.id=m.project_id WHERE m.id=?",
                           (req.milestone_id,)).fetchone()
@@ -183,12 +196,33 @@ async def verify_payment(req: PaymentVerifyReq, u=Depends(current_user)):
             raise HTTPException(403, "Not your payment")
         if p["status"] == "held":
             return {"ok": True, "status": "held", "payment_id": p["id"]}
+        if p["status"] != "created":
+            raise HTTPException(400, f"Payment is in status '{p['status']}', cannot verify")
 
-        # Verify signature
+        # SECURITY: Validate that client-supplied order_id matches what we saved in DB
+        # This prevents substituting a cheap order to verify an expensive one
+        p_dict = dict(p)
+        saved_order_id = p_dict.get("gateway_order_id") or ""
+        if saved_order_id and saved_order_id != req.razorpay_order_id:
+            logger.warning(
+                "Payment %s: order_id mismatch — DB has '%s' but client sent '%s' (user %s)",
+                req.payment_id, saved_order_id, req.razorpay_order_id, u["id"]
+            )
+            raise HTTPException(400, "Order ID mismatch — verification rejected")
+
+        # SECURITY: Signature MUST be verified in production. In DEV_MODE allow bypass for mock payments.
         if config.RAZORPAY_KEY_SECRET:
-            valid = verify_razorpay_signature(req.razorpay_order_id, req.razorpay_payment_id, req.razorpay_signature, config.RAZORPAY_KEY_SECRET)
+            valid = verify_razorpay_signature(
+                req.razorpay_order_id, req.razorpay_payment_id,
+                req.razorpay_signature, config.RAZORPAY_KEY_SECRET
+            )
             if not valid:
-                raise HTTPException(400, "Invalid payment signature")
+                logger.warning("Invalid Razorpay signature for payment %s user %s", req.payment_id, u["id"])
+                raise HTTPException(400, "Invalid payment signature — verification failed")
+        elif not config.DEV_MODE:
+            # Production with no key set: refuse to silently bypass
+            logger.error("RAZORPAY_KEY_SECRET not set in production — blocking verify call")
+            raise HTTPException(503, "Payment gateway not configured. Contact support.")
 
         c.execute(
             "UPDATE payments SET status='held', gateway_payment_id=?, updated_at=? WHERE id=?",
@@ -215,9 +249,16 @@ async def verify_payment(req: PaymentVerifyReq, u=Depends(current_user)):
 async def payment_webhook(request: Request, x_razorpay_signature: Optional[str] = Header(None)):
     """Razorpay Webhook listener."""
     body = await request.body()
-    if config.RAZORPAY_WEBHOOK_SECRET:
+    # SECURITY: Always require webhook signature. Without it, any party can fake payment events.
+    if not config.RAZORPAY_WEBHOOK_SECRET:
+        if not config.DEV_MODE:
+            logger.error("RAZORPAY_WEBHOOK_SECRET not set — rejecting all webhook calls in production")
+            raise HTTPException(503, "Webhook not configured")
+        # DEV_MODE: accept without signature (for local testing only)
+        logger.warning("DEV_MODE: accepting webhook without secret validation")
+    else:
         if not x_razorpay_signature:
-            raise HTTPException(400, "Missing signature")
+            raise HTTPException(400, "Missing X-Razorpay-Signature header")
         expected = hmac.new(config.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"), body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_razorpay_signature):
             raise HTTPException(400, "Invalid webhook signature")

@@ -187,11 +187,16 @@ def test_customer_post_job_confirmation_flow():
     from app.db import db
     import time
     with db() as c:
-        c.execute("INSERT OR IGNORE INTO users(id, phone, role, name, lang, created_at) VALUES(9991, '9837101839', 'customer', 'Amit Kumar', 'hi', ?)", (time.time(),))
+        row = c.execute("SELECT id FROM users WHERE phone='9837101839'").fetchone()
+        if row:
+            cid = row["id"]
+        else:
+            cur = c.execute("INSERT INTO users(phone, role, name, created_at) VALUES('9837101839', 'customer', 'Amit Kumar', ?)", (time.time(),))
+            cid = cur.lastrowid
 
     async def _run():
         customer_user = {
-            "id": 9991,
+            "id": cid,
             "role": "customer",
             "name": "Amit Kumar",
             "phone": "9837101839",

@@ -1,4 +1,4 @@
-import asyncio, os, secrets, sys, threading, time
+import asyncio, logging, os, secrets, sys, threading, time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -22,6 +22,7 @@ from .security import (
 from .sms import send_otp_sms
 from .common import *   # shared helpers (SKILLS, effective_status, get_booking, ...)
 
+logger = logging.getLogger("kaamsetu.main")
 DEFAULT_SECRET_KEYS = {"change-me-in-production", "mistribaiya-dev-secret-change-in-prod-xyz-987"}
 if not config.DEV_MODE and config.SECRET_KEY in DEFAULT_SECRET_KEYS:
     logger.critical("FATAL: In production (DEV_MODE=0), SECRET_KEY must be configured with a secure secret! Exiting.")
@@ -697,14 +698,14 @@ def job_interested(job_id: int, u=Depends(current_user)):
         j = c.execute("SELECT * FROM jobs WHERE id=? AND customer_id=?", (job_id, u["id"])).fetchone()
         if not j:
             raise HTTPException(404, "Job not found")
-        rows = c.execute("SELECT u.id,u.name,u.phone,wp.*,ji.rate AS quoted FROM job_interests ji JOIN users u ON u.id=ji.worker_id "
+        rows = c.execute("SELECT u.id, u.name, wp.*, ji.rate AS quoted FROM job_interests ji JOIN users u ON u.id=ji.worker_id "
                          "JOIN worker_profiles wp ON wp.user_id=u.id WHERE ji.job_id=?", (job_id,)).fetchall()
         ranges = busy_ranges(c, [r["id"] for r in rows])
     out = []
     for r in rows:
         st = effective_status(r, ranges[r["id"]], pdate(j["start_date"]), time.time())
         dist = haversine_km(j["lat"], j["lng"], r["lat"], r["lng"]) if (j["lat"] is not None and j["lng"] is not None and r["lat"] is not None and r["lng"] is not None) else None
-        pub = {**worker_public(r, r, st, dist), "quoted_rate": r["quoted"], "phone": r["phone"] if "phone" in r.keys() else ""}
+        pub = {**worker_public(r, r, st, dist), "quoted_rate": r["quoted"]}
         out.append(pub)
     return {"workers": out}
 

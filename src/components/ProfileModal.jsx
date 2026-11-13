@@ -214,8 +214,10 @@ export default function ProfileModal({
         } catch (e) {}
       }
       if (curLat == null || curLng == null) {
-        curLat = 28.6139; // Delhi center default
-        curLng = 77.2090;
+        // Do NOT silently default to Delhi. Require the user to set a location explicitly.
+        showToast('कृपया पहले अपनी लोकेशन सेट करें — GPS बटन दबाएं या शहर चुनें।');
+        setLoading(false);
+        return;
       }
 
       // Update role-specific profile

@@ -50,3 +50,4 @@ All notable changes to the MistriBhaiya application are documented in this file.
 - **Test Seeding:** Created `scripts/seed_test_users.py` gated by `DEV_MODE=1` to seed worker (`9837101838`), customer (`9837101839`), and contractor (`9837101840`).
 - **UI Testing:** Added Playwright E2E verification test in `tests_ui/e2e.spec.js` and `tests_ui/playwright.config.js`.
 - **Production Build:** Recompiled frontend distribution with `npm run build` updating `frontend/react-app.js`.
+

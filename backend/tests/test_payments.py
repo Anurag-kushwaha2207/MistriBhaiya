@@ -122,11 +122,13 @@ def test_cash_payment_flow():
     client.put("/api/worker/profile", headers=w_hdr, json={
         "skills": ["plumber"], "daily_rate": 500, "experience_years": 2, "village": "Lucknow", "lat": LAT, "lng": LNG, "radius_km": 10
     })
+    client.post("/api/worker/status", headers=w_hdr, json={"status": "free"})
     c_hdr, c_id = get_auth("9811000004", "customer", "Anil Customer")
 
     r_book = client.post("/api/bookings", headers=c_hdr, json={
-        "worker_id": w_id, "skill": "plumber", "start_date": "2026-11-12", "days": 1, "agreed_rate": 500, "lat": LAT, "lng": LNG
+        "worker_id": w_id, "skill": "plumber", "start_date": "2026-11-20", "days": 1, "agreed_rate": 500, "lat": LAT, "lng": LNG
     })
+    assert r_book.status_code == 200
     bid = r_book.json()["id"]
 
     # Customer chooses cash payment
