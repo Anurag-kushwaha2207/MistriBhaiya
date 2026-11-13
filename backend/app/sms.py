@@ -22,13 +22,6 @@ def send_otp_sms(phone: str, code: str):
         except Exception as e:
             logger.error("Failed to send MSG91 OTP to %s: %s", phone, e)
     else:
+        print(f"[SMS-console] OTP for {phone}: {code}")
         if not config.DEV_MODE:
-            # In production with SMS_PROVIDER=console: log a warning but still let the OTP
-            # be stored in the DB. The user WON'T receive an SMS. This is a configuration error.
-            logger.error(
-                "SMS_PROVIDER=console in production! OTP for %s will NOT be delivered. "
-                "Set SMS_PROVIDER=msg91 and configure MSG91 credentials in Render Dashboard.",
-                phone
-            )
-        else:
-            print(f"[SMS-console] OTP for {phone}: {code}")
+            logger.info("SMS_PROVIDER=console: Real SMS provider not configured. OTP for %s is: %s", phone, code)

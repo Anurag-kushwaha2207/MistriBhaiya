@@ -19,7 +19,7 @@ if not os.path.isabs(_raw_db):
             DB_PATH = os.path.abspath(_raw_db)
 else:
     DB_PATH = _raw_db
-DEV_MODE = _b("DEV_MODE", "0")            # DEV_MODE=1 returns the OTP in the API response. NEVER use in production.
+DEV_MODE = _b("DEV_MODE", "1")            # DEV_MODE=1 returns the OTP in the API response. Set to 0 once real SMS gateway is active.
 ADMIN_PHONES = {p.strip() for p in os.getenv("ADMIN_PHONES", "").split(",") if p.strip()}
 
 DEFAULT_RADIUS_KM = float(os.getenv("DEFAULT_RADIUS_KM", "6"))

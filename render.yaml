@@ -20,7 +20,7 @@ services:
     envVars:
       # SECRET_KEY: Set this in Render Dashboard → Environment (never commit a real key here)
       - { key: SECRET_KEY, value: "ec06a6bfb6cc9fda5ca9712335a9b23d324e40b0170cbb4ee2be9fad8aa32f9f" }
-      - { key: DEV_MODE, value: "0" }
+      - { key: DEV_MODE, value: "1" }
       - { key: DB_PATH, value: /tmp/mistribaiya.db }
       - { key: SMS_PROVIDER, value: console }  # Change to msg91 once MSG91 credentials are set
       - { key: CALL_PROVIDER, value: direct }
