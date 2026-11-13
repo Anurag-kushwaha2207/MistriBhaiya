@@ -41,6 +41,7 @@ def send_otp_sms(phone: str, code: str):
             logger.info("Fast2SMS OTP sent to %s, status=%s", phone, resp.status)
         except Exception as e:
             logger.error("Failed to send Fast2SMS OTP to %s: %s", phone, e)
+            print(f"[SMS-fallback] OTP for {phone}: {code}")
     else:
         print(f"[SMS-console] OTP for {phone}: {code}")
         if not config.DEV_MODE:
