@@ -21,6 +21,26 @@ def send_otp_sms(phone: str, code: str):
             logger.info("MSG91 OTP sent to %s, status=%s", phone, resp.status)
         except Exception as e:
             logger.error("Failed to send MSG91 OTP to %s: %s", phone, e)
+    elif config.SMS_PROVIDER == "fast2sms" or config.FAST2SMS_API_KEY:
+        # Fast2SMS OTP Route (Quick Indian SMS delivery directly to mobile handsets)
+        try:
+            body = json.dumps({
+                "route": "otp",
+                "variables_values": code,
+                "numbers": phone
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://www.fast2sms.com/dev/bulkV2",
+                data=body,
+                headers={
+                    "authorization": config.FAST2SMS_API_KEY,
+                    "content-type": "application/json"
+                }
+            )
+            resp = urllib.request.urlopen(req, timeout=10)
+            logger.info("Fast2SMS OTP sent to %s, status=%s", phone, resp.status)
+        except Exception as e:
+            logger.error("Failed to send Fast2SMS OTP to %s: %s", phone, e)
     else:
         print(f"[SMS-console] OTP for {phone}: {code}")
         if not config.DEV_MODE:
