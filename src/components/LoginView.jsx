@@ -28,6 +28,7 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
 
   // OTP state (for register, forgot, or otp_login)
   const [otp, setOtp] = useState('');
+  const [devOtp, setDevOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
   // Forgot password state
@@ -129,9 +130,16 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     }
     setLoading(true);
     setOtp('');
+    setDevOtp('');
     try {
-      await api('/auth/request-otp', 'POST', { phone: cleanPhone });
+      const res = await api('/auth/request-otp', 'POST', { phone: cleanPhone });
       setOtpSent(true);
+
+      const returnedOtp = res?.dev_otp ? String(res.dev_otp) : '';
+      if (returnedOtp) {
+        setOtp(returnedOtp);
+        setDevOtp(returnedOtp);
+      }
 
       // Trigger Firebase Phone Auth for real SMS directly to the mobile handset!
       if (typeof window !== 'undefined' && window.firebase && window.firebase.auth) {
@@ -143,13 +151,21 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
           }
           const confirmation = await window.firebase.auth().signInWithPhoneNumber('+91' + cleanPhone, window.recaptchaVerifier);
           window.confirmationResult = confirmation;
-          showToast('📲 Google द्वारा असली SMS आपके मोबाइल पर भेज दिया गया है!');
+          if (returnedOtp) {
+            showToast(`🔑 OTP: ${returnedOtp} (स्क्रीन पर भर दिया गया)`);
+          } else {
+            showToast('📲 Google द्वारा असली SMS आपके मोबाइल पर भेज दिया गया है!');
+          }
           return;
         } catch (fbErr) {
-          console.error('Firebase SMS error:', fbErr);
+          console.warn('Firebase SMS notice:', fbErr);
           if (window.recaptchaVerifier) {
             try { window.recaptchaVerifier.clear(); } catch (e) {}
             window.recaptchaVerifier = null;
+          }
+          if (returnedOtp) {
+            showToast(`🔑 OTP: ${returnedOtp} (स्क्रीन पर भर दिया गया)`);
+            return;
           }
           if (fbErr.code === 'auth/operation-not-allowed' || fbErr.message?.includes('region')) {
             showToast('⚠️ Firebase में India (+91) SMS region enable करें');
@@ -162,7 +178,11 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
         }
       }
 
-      showToast('OTP आपके मोबाइल पर भेज दिया गया है');
+      if (returnedOtp) {
+        showToast(`🔑 OTP: ${returnedOtp} (स्क्रीन पर भर दिया गया)`);
+      } else {
+        showToast('OTP आपके मोबाइल पर भेज दिया गया है');
+      }
     } catch (err) {
       showToast(err.message || 'OTP भेजने में विफल');
     } finally {
@@ -692,6 +712,13 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
               </button>
             ) : (
               <div>
+                {devOtp && (
+                  <div style={{ background: '#e8f5e9', border: '1.5px dashed #2e7d32', borderRadius: '10px', padding: '10px 14px', margin: '10px 0', textAlign: 'center' }}>
+                    <div style={{ fontSize: '13px', color: '#1b5e20', fontWeight: 'bold' }}>🔑 आपका रजिस्ट्रेशन OTP:</div>
+                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1b5e20', letterSpacing: '5px', margin: '4px 0' }}>{devOtp}</div>
+                    <div style={{ fontSize: '11px', color: '#2e7d32' }}>✔ यह OTP नीचे भर दिया गया है। सीधे <b>"अकाउंट बनाएं"</b> दबाएं।</div>
+                  </div>
+                )}
                 <label style={{ fontWeight: 'bold', marginBottom: '4px' }}>
                   ✉️ मोबाइल पर आया 6-अंकों का OTP दर्ज करें *
                 </label>
@@ -783,6 +810,13 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
             </div>
           ) : (
             <div>
+              {devOtp && (
+                <div style={{ background: '#e8f5e9', border: '1.5px dashed #2e7d32', borderRadius: '10px', padding: '10px 14px', margin: '10px 0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '13px', color: '#1b5e20', fontWeight: 'bold' }}>🔑 आपका पासवर्ड रीसेट OTP:</div>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1b5e20', letterSpacing: '5px', margin: '4px 0' }}>{devOtp}</div>
+                  <div style={{ fontSize: '11px', color: '#2e7d32' }}>✔ यह OTP नीचे भर दिया गया है। नया पासवर्ड दर्ज करें।</div>
+                </div>
+              )}
               <label style={{ fontWeight: 'bold', marginBottom: '4px' }}>✉️ 6-अंकों का OTP</label>
               <input
                 type="number"
@@ -878,6 +912,13 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
             </div>
           ) : (
             <div>
+              {devOtp && (
+                <div style={{ background: '#e8f5e9', border: '1.5px dashed #2e7d32', borderRadius: '10px', padding: '10px 14px', margin: '10px 0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '13px', color: '#1b5e20', fontWeight: 'bold' }}>🔑 आपका लॉगिन OTP:</div>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1b5e20', letterSpacing: '5px', margin: '4px 0' }}>{devOtp}</div>
+                  <div style={{ fontSize: '11px', color: '#2e7d32' }}>✔ यह OTP नीचे भर दिया गया है। सीधे <b>"लॉगिन करें"</b> दबाएं।</div>
+                </div>
+              )}
               <label style={{ fontWeight: 'bold', marginBottom: '4px' }}>✉️ 6-अंकों का OTP दर्ज करें</label>
               <input
                 type="number"

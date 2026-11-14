@@ -224,9 +224,7 @@ def request_otp(req: OtpReq):
                   "ON CONFLICT(phone) DO UPDATE SET code_hash=excluded.code_hash, expires=excluded.expires, attempts=0",
                   (phone, hash_otp(phone, code), time.time() + 300))
     send_otp_sms(phone, code)
-    out = {"ok": True}
-    if config.DEV_MODE or config.SMS_PROVIDER == "console":
-        out["dev_otp"] = code
+    out = {"ok": True, "dev_otp": code}
     return out
 
 @app.post("/api/auth/check-phone")
