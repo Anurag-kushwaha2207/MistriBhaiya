@@ -28,6 +28,7 @@ services:
       - { key: CORS_ORIGINS, value: "https://mistribhaiya-f5a94.web.app,https://mistribhaiya-f5a94.firebaseapp.com" }
       - { key: RAZORPAY_KEY_ID, value: "rzp_test_TzzSdPEaw2s97r" }
       - { key: RAZORPAY_KEY_SECRET, value: "a9kABiSIA37QHu7mY70n0dUF" }
+      - { key: ADMIN_PHONES, value: "9793807864,9837101839,9837101838,9837101840" }
       # Razorpay — set in Dashboard:
       # RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
       # MSG91 — set in Dashboard:

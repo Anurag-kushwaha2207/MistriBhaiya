@@ -1,48 +1,441 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MistriBaiya Admin</title>
-<style>
-body{font-family:system-ui,sans-serif;margin:0;background:#f4f7f4;color:#1d2b1d}
-header{background:#1b5e20;color:#fff;padding:12px 16px;font-weight:700}
-main{padding:12px;max-width:1100px;margin:auto}
-.cards{display:flex;flex-wrap:wrap;gap:10px}.c{background:#fff;border-radius:12px;padding:12px 16px;min-width:130px;box-shadow:0 1px 4px #0001}
-.c b{font-size:24px;display:block}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;margin:10px 0;font-size:13px}
-th,td{padding:7px 9px;border-bottom:1px solid #eef;text-align:left}th{background:#e8f0e8}
-h3{margin:16px 0 4px}button{padding:5px 9px;border:0;border-radius:8px;background:#2e7d32;color:#fff;cursor:pointer}
-.free{color:#2e7d32;font-weight:700}.sos{background:#ffebee}
-</style></head><body>
-<header>🏗️ MistriBaiya Admin <span id="who" style="float:right;font-weight:400"></span></header>
-<main id="m">Loading…</main>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MistriBhaiya Admin Dashboard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      margin: 0;
+      background: #f0f4f1;
+      color: #1a2e1c;
+    }
+    header {
+      background: linear-gradient(135deg, #1b5e20, #2e7d32);
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .brand { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+    .nav-actions { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+    .nav-actions a, .nav-actions button {
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.4);
+      padding: 6px 12px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .nav-actions a:hover, .nav-actions button:hover { background: rgba(255,255,255,0.35); }
+    .btn-logout { background: #b71c1c !important; border: none !important; }
+    
+    main { max-width: 1200px; margin: 20px auto; padding: 0 16px; }
+
+    /* Login Card */
+    .login-box {
+      max-width: 420px;
+      margin: 60px auto;
+      background: #fff;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .login-box h2 { margin: 0 0 10px; color: #1b5e20; }
+    .login-box p { color: #555; font-size: 14px; margin-bottom: 24px; }
+    .form-group { text-align: left; margin-bottom: 16px; }
+    .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #333; }
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+    .form-group input:focus { outline: none; border-color: #2e7d32; box-shadow: 0 0 0 2px rgba(46,125,50,0.2); }
+    .btn-primary {
+      width: 100%;
+      background: #2e7d32;
+      color: #fff;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: background 0.2s;
+    }
+    .btn-primary:hover { background: #1b5e20; }
+    .login-err { color: #d32f2f; background: #ffebee; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; display: none; }
+
+    /* Cards */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .c {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      border-left: 4px solid #2e7d32;
+    }
+    .c b { font-size: 26px; color: #1b5e20; display: block; margin-bottom: 4px; }
+    .c span { font-size: 13px; color: #555; font-weight: 600; }
+
+    /* Tables */
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 28px 0 12px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #1b5e20;
+    }
+    .table-container {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+    th { background: #e8f5e9; color: #1b5e20; padding: 10px 12px; font-weight: 700; border-bottom: 2px solid #c8e6c9; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; color: #333; }
+    tr:hover { background: #f9fbf9; }
+    .free-badge { background: #e8f5e9; color: #2e7d32; padding: 3px 8px; border-radius: 12px; font-weight: 700; font-size: 11px; }
+    .sos-row { background: #ffebee !important; }
+    .verified-badge { color: #2e7d32; font-weight: 800; font-size: 16px; }
+    button.btn-verify {
+      background: #2e7d32;
+      color: #fff;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    button.btn-verify:hover { background: #1b5e20; }
+    .empty-row { text-align: center; color: #888; padding: 20px; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #323232;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+      z-index: 999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">🏗️ MistriBhaiya <span style="font-weight:400;font-size:14px;opacity:0.9">Admin Portal</span></div>
+  <div class="nav-actions">
+    <span id="who" style="font-weight: 600;"></span>
+    <a href="/" target="_blank">🏠 Go to App</a>
+    <button onclick="load()" id="refreshBtn">🔄 Refresh</button>
+    <button class="btn-logout" id="logoutBtn" style="display:none;" onclick="logout()">🚪 Logout</button>
+  </div>
+</header>
+
+<main id="m">
+  <div style="text-align:center;padding:50px;font-size:16px;color:#666;">लोड हो रहा है... (Loading Admin Dashboard...)</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
 <script src="config.js"></script>
 <script>
-const tok = localStorage.getItem("ks_token");
+let tok = localStorage.getItem("ks_token");
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const getApiBase = () => (window.MISTRI_API_BASE ? window.MISTRI_API_BASE.replace(/\/+$/, "") : "");
-const api = async (p, m = "GET") => {
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  setTimeout(() => { t.style.display = "none"; }, 3500);
+}
+
+const api = async (p, m = "GET", body = null) => {
   const base = getApiBase();
-  const r = await fetch((base ? base : "") + "/api" + p, { method: m, headers: { Authorization: "Bearer " + tok } });
-  if (!r.ok) throw new Error((await r.json()).detail || r.status);
+  const opts = {
+    method: m,
+    headers: {
+      "Authorization": "Bearer " + (tok || ""),
+      "Content-Type": "application/json"
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch((base ? base : "") + "/api" + p, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || ("HTTP " + r.status));
+  }
   return r.json();
 };
-const when = t => t ? new Date(t * 1000).toLocaleString() : "-";
+
+const when = t => t ? new Date(t * 1000).toLocaleString("en-IN") : "-";
+
+function renderLoginForm(errorMsg = "") {
+  document.getElementById("logoutBtn").style.display = "none";
+  document.getElementById("who").textContent = "";
+  const m = document.getElementById("m");
+  m.innerHTML = `
+    <div class="login-box">
+      <h2>👑 एडमिन लॉगिन (Admin Login)</h2>
+      <p>MistriBhaiya पूरा प्लेटफ़ॉर्म कंट्रोल करने के लिए एडमिन क्रेडेंशियल दर्ज करें।</p>
+      <div id="loginErr" class="login-err" style="${errorMsg ? 'display:block' : 'display:none'}">${esc(errorMsg)}</div>
+      <form onsubmit="handleAdminLogin(event)">
+        <div class="form-group">
+          <label>मोबाइल नंबर (Admin Phone)</label>
+          <input type="tel" id="adminPhone" placeholder="10 अंक का मोबाइल नंबर" value="9793807864" required maxlength="10">
+        </div>
+        <div class="form-group">
+          <label>पासवर्ड (Password)</label>
+          <input type="password" id="adminPassword" placeholder="पासवर्ड दर्ज करें" value="admin123" required>
+        </div>
+        <button type="submit" class="btn-primary" id="loginSubmitBtn">एडमिन लॉगिन करें (Login)</button>
+      </form>
+      <div style="margin-top:16px;font-size:13px;color:#666;">
+        Default Admin Phone: <b>9793807864</b> | Password: <b>admin123</b>
+      </div>
+    </div>
+  `;
+}
+
+async function handleAdminLogin(e) {
+  e.preventDefault();
+  const phone = document.getElementById("adminPhone").value.trim();
+  const password = document.getElementById("adminPassword").value;
+  const btn = document.getElementById("loginSubmitBtn");
+  btn.disabled = true;
+  btn.textContent = "जाँच हो रही है...";
+  try {
+    const res = await api("/auth/login-password", "POST", { phone, password });
+    if (!res.token) throw new Error("Token not received");
+    tok = res.token;
+    localStorage.setItem("ks_token", tok);
+    if (res.user) {
+      localStorage.setItem("ks_user", JSON.stringify(res.user));
+    }
+    showToast("सफल लॉगिन! स्वागत है Admin " + (res.user?.name || ""));
+    load();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "एडमिन लॉगिन करें (Login)";
+    const errBox = document.getElementById("loginErr");
+    if (errBox) {
+      errBox.textContent = "लॉगिन असफल: " + (err.message || "कृपया नंबर और पासवर्ड जांचें");
+      errBox.style.display = "block";
+    }
+  }
+}
+
+function logout() {
+  localStorage.removeItem("ks_token");
+  localStorage.removeItem("ks_user");
+  tok = null;
+  renderLoginForm("आप सफलतापूर्वक लॉगआउट हो गए हैं।");
+}
+
 async function load() {
   const m = document.getElementById("m");
-  if (!tok) { m.innerHTML = "Please login in the main app first (with an ADMIN_PHONES number), then reopen this page."; return; }
+  if (!tok) {
+    renderLoginForm();
+    return;
+  }
+
   try {
-    const [s, w, b, sf] = await Promise.all([api("/admin/stats"), api("/admin/workers"), api("/admin/bookings"), api("/admin/safety")]);
-    const card = (k, v) => `<div class="c"><b>${esc(v)}</b>${esc(k)}</div>`;
-    m.innerHTML = `<div class="cards">${card("Workers", s.workers)}${card("Customers", s.customers)}${card("Free now", s.workers_free_now)}${card("Open jobs", s.open_jobs)}${card("Calls", s.calls)}
-      ${Object.entries(s.bookings).map(([k, v]) => card("Bookings " + k, v)).join("")}</div>
-      <h3>🆘 SOS events (${sf.sos.length})</h3><table><tr><th>When</th><th>User id</th><th>Booking</th><th>Location</th></tr>${sf.sos.map(x => `<tr class="sos"><td>${when(x.created_at)}</td><td>${x.user_id}</td><td>${x.booking_id ?? "-"}</td><td>${x.lat ?? ""}, ${x.lng ?? ""}</td></tr>`).join("")}</table>
-      <h3>Complaints (${sf.reports.length})</h3><table><tr><th>When</th><th>Reporter</th><th>Reported</th><th>Reason</th></tr>${sf.reports.map(x => `<tr><td>${when(x.created_at)}</td><td>${x.reporter_id}</td><td>${x.reported_id}</td><td>${esc(x.reason)}</td></tr>`).join("")}</table>
-      <h3>Workers</h3><table><tr><th>Name</th><th>Phone</th><th>Skills</th><th>Village</th><th>₹/day</th><th>Rating</th><th>Free now</th><th>Verified</th></tr>
-      ${w.workers.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.phone)}</td><td>${esc(x.skills)}</td><td>${esc(x.village)}</td><td>${x.daily_rate}</td><td>${(x.rating_avg || 0).toFixed(1)} (${x.rating_count})</td>
-      <td class="${x.free_now ? "free" : ""}">${x.free_now ? "FREE" : "-"}</td><td>${x.verified ? "✔" : `<button onclick="verify(${x.id})">Verify</button>`}</td></tr>`).join("")}</table>
-      <h3>Latest bookings</h3><table><tr><th>ID</th><th>Skill</th><th>Date</th><th>Days</th><th>Status</th><th>Worker</th><th>Customer</th><th>Rating</th></tr>
-      ${b.bookings.map(x => `<tr><td>${x.id}</td><td>${esc(x.skill)}</td><td>${esc(x.start_date)}</td><td>${x.days}</td><td>${esc(x.status)}</td><td>${x.worker_id}</td><td>${x.customer_id}</td><td>${x.rating ?? ""}</td></tr>`).join("")}</table>`;
-  } catch (e) { m.textContent = "Error: " + e.message; }
+    const [s, w, b, sf] = await Promise.all([
+      api("/admin/stats"),
+      api("/admin/workers"),
+      api("/admin/bookings"),
+      api("/admin/safety")
+    ]);
+
+    const userObj = JSON.parse(localStorage.getItem("ks_user") || "{}");
+    document.getElementById("who").innerHTML = `👑 ${esc(userObj.name || 'Admin')} (${esc(userObj.phone || '')})`;
+    document.getElementById("logoutBtn").style.display = "inline-block";
+
+    const card = (label, val, border = "#2e7d32") => `
+      <div class="c" style="border-left-color:${border}">
+        <b>${esc(val)}</b>
+        <span>${esc(label)}</span>
+      </div>`;
+
+    m.innerHTML = `
+      <div class="cards">
+        ${card("👷 कुल मिस्त्री (Workers)", s.workers)}
+        ${card("👤 कुल ग्राहक (Customers)", s.customers)}
+        ${card("🟢 आज Free मिस्त्री", s.workers_free_now, "#4caf50")}
+        ${card("📋 खुली जॉब्स (Open Jobs)", s.open_jobs, "#ff9800")}
+        ${card("📞 कुल कॉल्स (Calls)", s.calls, "#009688")}
+        ${card("📨 नई बुकिंग (Requested)", s.bookings.requested || 0, "#ffb300")}
+        ${card("🤝 स्वीकृत बुकिंग (Accepted)", s.bookings.accepted || 0, "#2196f3")}
+        ${card("✅ पूर्ण काम (Completed)", s.bookings.completed || 0, "#4caf50")}
+        ${card("❌ निरस्त (Cancelled)", s.bookings.cancelled || 0, "#e91e63")}
+      </div>
+
+      <!-- SOS Alerts -->
+      <div class="section-title">
+        <span>🆘 आपातकालीन अलर्ट (SOS Events) - ${sf.sos.length}</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>समय</th><th>यूजर ID</th><th>बुकिंग ID</th><th>लोकेशन Coords</th><th>कार्रवाई</th></tr>
+          </thead>
+          <tbody>
+            ${sf.sos.length ? sf.sos.map(x => `
+              <tr class="sos-row">
+                <td>${when(x.created_at)}</td>
+                <td><b>${x.user_id}</b></td>
+                <td>${x.booking_id ?? "-"}</td>
+                <td>${x.lat ? `<a href="https://maps.google.com/?q=${x.lat},${x.lng}" target="_blank" style="color:#d32f2f;font-weight:600;">📍 ${x.lat}, ${x.lng}</a>` : "-"}</td>
+                <td><span style="color:#d32f2f;font-weight:700;">🚨 तुरंत ध्यान दें</span></td>
+              </tr>
+            `).join("") : '<tr><td colspan="5" class="empty-row">कोई आपातकालीन अलर्ट नहीं है। सुरक्षित!</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Complaints -->
+      <div class="section-title">
+        <span>⚠️ शिकायतें और रिपोर्ट (Complaints) - ${sf.reports.length}</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>समय</th><th>शिकायतकर्ता (ID)</th><th>आरोपी (ID)</th><th>कारण / विवरण</th></tr>
+          </thead>
+          <tbody>
+            ${sf.reports.length ? sf.reports.map(x => `
+              <tr>
+                <td>${when(x.created_at)}</td>
+                <td>${x.reporter_id}</td>
+                <td><b>${x.reported_id}</b></td>
+                <td>${esc(x.reason)}</td>
+              </tr>
+            `).join("") : '<tr><td colspan="4" class="empty-row">कोई शिकायत दर्ज नहीं है।</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Workers -->
+      <div class="section-title">
+        <span>👷 सभी पंजीकृत मिस्त्री / कारीगर (Workers) - ${w.workers.length}</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>नाम</th>
+              <th>मोबाइल</th>
+              <th>काम (Skills)</th>
+              <th>गाँव / शहर</th>
+              <th>दहाड़ी (₹/दिन)</th>
+              <th>रेटिंग</th>
+              <th>स्थिति (Free)</th>
+              <th>वेरिफिकेशन</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${w.workers.length ? w.workers.map(x => `
+              <tr>
+                <td>${x.id}</td>
+                <td><b>${esc(x.name)}</b></td>
+                <td><a href="tel:${x.phone}" style="color:#1b5e20;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a></td>
+                <td>${esc(x.skills || "-")}</td>
+                <td>${esc(x.village || "-")}</td>
+                <td>₹${x.daily_rate || "-"}</td>
+                <td>⭐ ${(x.rating_avg || 0).toFixed(1)} (${x.rating_count || 0})</td>
+                <td>${x.free_now ? '<span class="free-badge">🟢 FREE NOW</span>' : '<span style="color:#888;">व्यस्त</span>'}</td>
+                <td>${x.verified ? '<span class="verified-badge" title="वेरिफाइड">✔ Verified</span>' : `<button class="btn-verify" onclick="verify(${x.id})">वेरीफाई करें</button>`}</td>
+              </tr>
+            `).join("") : '<tr><td colspan="9" class="empty-row">कोई मिस्त्री उपलब्ध नहीं है।</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Latest Bookings -->
+      <div class="section-title">
+        <span>📅 हालिया बुकिंग्स (Recent Bookings) - ${b.bookings.length}</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>काम</th><th>दिनांक</th><th>दिन</th><th>स्थिति</th><th>मिस्त्री ID</th><th>ग्राहक ID</th><th>रेटिंग</th></tr>
+          </thead>
+          <tbody>
+            ${b.bookings.length ? b.bookings.map(x => `
+              <tr>
+                <td>#${x.id}</td>
+                <td><b>${esc(x.skill || "-")}</b></td>
+                <td>${esc(x.start_date || "-")}</td>
+                <td>${x.days || 1} दिन</td>
+                <td><span style="font-weight:700;color:${x.status==='completed'?'#2e7d32':x.status==='accepted'?'#1976d2':x.status==='rejected'?'#c2185b':'#f57c00'}">${esc(x.status)}</span></td>
+                <td>${x.worker_id}</td>
+                <td>${x.customer_id}</td>
+                <td>${x.rating ? '⭐ ' + x.rating : '-'}</td>
+              </tr>
+            `).join("") : '<tr><td colspan="8" class="empty-row">अभी कोई बुकिंग नहीं है।</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    if (e.message && (e.message.includes("403") || e.message.includes("Admin only") || e.message.includes("401") || e.message.includes("Unauthorized"))) {
+      renderLoginForm("एडमिन अनुमतियां आवश्यक हैं (Admin only). कृपया सही एडमिन नंबर और पासवर्ड से लॉगिन करें।");
+    } else {
+      m.innerHTML = `
+        <div style="background:#fff;border-radius:12px;padding:30px;max-width:500px;margin:40px auto;box-shadow:0 2px 10px rgba(0,0,0,0.1);text-align:center;">
+          <h3 style="color:#d32f2f">डेटा लोड करने में त्रुटि (Error)</h3>
+          <p style="color:#555">${esc(e.message)}</p>
+          <button class="btn-primary" onclick="load()" style="margin-top:12px;">पुनः प्रयास करें (Retry)</button>
+          <button onclick="logout()" style="background:#eee;color:#333;border:none;padding:10px 16px;border-radius:8px;margin-top:10px;cursor:pointer;width:100%;">लॉगआउट करके पुनः लॉगिन करें</button>
+        </div>
+      `;
+    }
+  }
 }
-async function verify(id) { await api("/admin/workers/" + id + "/verify", "POST"); load(); }
-load(); setInterval(load, 15000);
-</script></body></html>
+
+async function verify(id) {
+  try {
+    await api("/admin/workers/" + id + "/verify", "POST");
+    showToast("मिस्त्री सफलतापूर्वक वेरीफाई हो गया! (Worker Verified)");
+    load();
+  } catch (err) {
+    alert("वेरीफाई करने में त्रुटि: " + err.message);
+  }
+}
+
+// Initial load
+load();
+setInterval(() => {
+  if (tok && document.getElementById("who").textContent) {
+    load();
+  }
+}, 20000);
+</script>
+</body>
+</html>

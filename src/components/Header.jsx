@@ -13,6 +13,30 @@ export default function Header({ lang, onToggleLang, user, onOpenProfile, unread
         >
           {lang === 'hi' ? 'EN' : 'हिं'}
         </button>
+        {Boolean(user && (user.is_admin || ['9793807864', '9837101839', '9837101838', '9837101840'].includes(String(user?.phone || '')))) && (
+          <a
+            href="/admin.html"
+            target="_blank"
+            rel="noreferrer"
+            title="Admin Dashboard"
+            style={{
+              textDecoration: 'none',
+              background: '#ffd700',
+              color: '#1b5e20',
+              borderRadius: '20px',
+              padding: '5px 10px',
+              fontWeight: 'bold',
+              fontSize: '12px',
+              marginRight: '6px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+            }}
+          >
+            👑 Admin
+          </a>
+        )}
         {user && (
           <button
             className="sec notif-btn"

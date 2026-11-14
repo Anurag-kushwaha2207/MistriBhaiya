@@ -278,6 +278,9 @@ def login_password(req: LoginPasswordReq, request: Request):
         raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
     clear_failures("pw_fail:" + phone)
     with db() as c:
+        if phone in config.ADMIN_PHONES and not u["is_admin"]:
+            c.execute("UPDATE users SET is_admin=1 WHERE id=?", (u["id"],))
+            u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
         prof = get_user_profile(c, u)
     return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
 

@@ -605,6 +605,27 @@ export default function ProfileModal({
                   📍 {t('setloc')}
                 </button>
               </div>
+              {Boolean(user?.is_admin || ['9793807864', '9837101839', '9837101838', '9837101840'].includes(String(user?.phone || ''))) && (
+                <a
+                  href="/admin.html"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'block',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
+                    color: '#fff',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontWeight: 'bold',
+                    textDecoration: 'none',
+                    marginTop: '4px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                  }}
+                >
+                  👑 एडमिन डैशबोर्ड (Admin Dashboard) →
+                </a>
+              )}
               <button className="warn" style={{ width: '100%', marginTop: '6px' }} onClick={handleLogoutClick}>
                 🚪 {t('logout')}
               </button>
