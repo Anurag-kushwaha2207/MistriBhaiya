@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api, getLoc } from '../api';
 
-export default function CustomerContractors({ token, meta, lang, onOpenProject, showToast, t }) {
+export default function CustomerContractors({ token, meta, lang, onOpenProject, onOpenChat, onStartCall, showToast, t }) {
   const [activeTab, setActiveTab] = useState('find'); // 'find' | 'my_projects'
   const [contractors, setContractors] = useState([]);
   const [myProjects, setMyProjects] = useState([]);
@@ -11,7 +11,7 @@ export default function CustomerContractors({ token, meta, lang, onOpenProject, 
     setLoading(true);
     try {
       let loc = null;
-      try { loc = await getLoc(false); } catch (e) {}
+      try { loc = await getLoc(false); } catch (e) { }
 
       const q = new URLSearchParams();
       if (loc) {
@@ -205,6 +205,45 @@ export default function CustomerContractors({ token, meta, lang, onOpenProject, 
                   {p.description}
                 </div>
               )}
+
+              {/* Direct Chat & Call with Contractor */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', margin: '8px 0', flexWrap: 'wrap' }}>
+                {p.contractor_phone && (
+                  <a
+                    href={`tel:${p.contractor_phone}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: '#e8f5e9',
+                      color: '#2e7d32',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
+                      fontWeight: 'bold',
+                      fontSize: '12px',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    📞 {p.contractor_phone}
+                  </a>
+                )}
+                {onOpenChat && (
+                  <button
+                    type="button"
+                    className="sec"
+                    style={{ padding: '5px 12px', fontSize: '12px', fontWeight: 'bold' }}
+                    onClick={() => onOpenChat({
+                      kind: 'projects',
+                      id: p.id,
+                      other_name: p.contractor_name || 'Contractor',
+                      other_phone: p.contractor_phone || '',
+                      other_id: p.contractor_id
+                    })}
+                  >
+                    💬 ठेकेदार से चैट
+                  </button>
+                )}
+              </div>
 
               {p.status === 'accepted' && (
                 <div style={{ background: '#e3f2fd', color: '#0d47a1', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', marginTop: '6px' }}>

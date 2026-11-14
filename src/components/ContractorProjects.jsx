@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 
-export default function ContractorProjects({ token, onOpenCounter, showToast, t }) {
+export default function ContractorProjects({ token, onOpenCounter, onOpenChat, onStartCall, showToast, t }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('all'); // 'all' | 'requested' | 'active' | 'completed'
@@ -186,6 +186,45 @@ export default function ContractorProjects({ token, onOpenCounter, showToast, t 
                 {p.description}
               </p>
             )}
+
+            {/* Direct Chat & Call with Customer */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', margin: '8px 0', flexWrap: 'wrap' }}>
+              {p.customer_phone && (
+                <a
+                  href={`tel:${p.customer_phone}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: '#e8f5e9',
+                    color: '#2e7d32',
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontWeight: 'bold',
+                    fontSize: '12px',
+                    textDecoration: 'none'
+                  }}
+                >
+                  📞 {p.customer_phone}
+                </a>
+              )}
+              {onOpenChat && (
+                <button
+                  type="button"
+                  className="sec"
+                  style={{ padding: '5px 12px', fontSize: '12px', fontWeight: 'bold' }}
+                  onClick={() => onOpenChat({
+                    kind: 'projects',
+                    id: p.id,
+                    other_name: p.customer_name || 'Customer',
+                    other_phone: p.customer_phone || '',
+                    other_id: p.customer_id
+                  })}
+                >
+                  💬 ग्राहक से चैट
+                </button>
+              )}
+            </div>
 
             {/* Action Buttons depending on status */}
             <div className="row" style={{ marginTop: '12px', gap: '8px', flexWrap: 'wrap' }}>

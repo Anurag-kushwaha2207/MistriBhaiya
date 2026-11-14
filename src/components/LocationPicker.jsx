@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { STATES_DATA, getFriendlyLocationName } from '../data/locations';
+import { STATES_ALL, getFriendlyLocationName } from '../data/locations';
 
 export default function LocationPicker({
   lat,
@@ -8,54 +8,63 @@ export default function LocationPicker({
   village = '',
   onVillageChange,
   onGpsClick,
-  label = '📍 लोकेशन चुनें (Location)',
+  label,
+  lang = 'hi',
   showVillageInput = true
 }) {
-  const [selectedState, setSelectedState] = useState('');
-  const [selectedDistrict, setSelectedDistrict] = useState('');
-  const [selectedTehsil, setSelectedTehsil] = useState('');
+  const isEn = lang === 'en';
+
+  const [selectedStateKey, setSelectedStateKey] = useState('');
+  const [selectedDistKey, setSelectedDistKey] = useState('');
+  const [selectedTehsilKey, setSelectedTehsilKey] = useState('');
 
   // Find districts for chosen state
-  const stateObj = STATES_DATA.find((s) => s.name === selectedState);
+  const stateObj = STATES_ALL.find((s) => s.key === selectedStateKey);
   const districtList = stateObj ? stateObj.districts : [];
 
   // Find tehsils for chosen district
-  const districtObj = districtList.find((d) => d.name === selectedDistrict);
-  const tehsilList = districtObj ? districtObj.tehsils : [];
+  const districtObj = districtList.find((d) => d.key === selectedDistKey);
+  const tehsilList = (districtObj && districtObj.tehsils) ? districtObj.tehsils : [];
 
-  const handleStateChange = (stateName) => {
-    setSelectedState(stateName);
-    setSelectedDistrict('');
-    setSelectedTehsil('');
+  const handleStateChange = (stateKey) => {
+    setSelectedStateKey(stateKey);
+    setSelectedDistKey('');
+    setSelectedTehsilKey('');
   };
 
-  const handleDistrictChange = (distName) => {
-    setSelectedDistrict(distName);
-    setSelectedTehsil('');
-    const dist = districtList.find((d) => d.name === distName);
+  const handleDistrictChange = (distKey) => {
+    setSelectedDistKey(distKey);
+    setSelectedTehsilKey('');
+    const dist = districtList.find((d) => d.key === distKey);
     if (dist && dist.lat != null && dist.lng != null && onLocationSelect) {
+      const sName = isEn ? stateObj.en : stateObj.hi;
+      const dName = isEn ? dist.en : dist.hi;
       onLocationSelect({
         lat: dist.lat,
         lng: dist.lng,
-        text: `${dist.name.split(' (')[0]}, ${selectedState.split(' (')[0]}`
+        text: `${dName}, ${sName}`
       });
     }
   };
 
-  const handleTehsilChange = (tehsilName) => {
-    setSelectedTehsil(tehsilName);
-    const teh = tehsilList.find((t) => t.name === tehsilName);
+  const handleTehsilChange = (tehName) => {
+    setSelectedTehsilKey(tehName);
+    const teh = tehsilList.find((t) => (t.en === tehName || t.hi === tehName));
     if (teh && teh.lat != null && teh.lng != null && onLocationSelect) {
-      const locText = `${teh.name.split(' (')[0]}, ${selectedDistrict.split(' (')[0]} (${selectedState.split(' (')[0]})`;
+      const sName = isEn ? stateObj.en : stateObj.hi;
+      const dName = isEn ? districtObj.en : districtObj.hi;
+      const tName = isEn ? teh.en : teh.hi;
       onLocationSelect({
         lat: teh.lat,
         lng: teh.lng,
-        text: locText
+        text: `${tName}, ${dName} (${sName})`
       });
     }
   };
 
-  const currentDisplay = getFriendlyLocationName(lat, lng) || 'लोकेशन अभी चुनी नहीं गई है';
+  const defaultLabel = isEn ? '📍 Select Location' : '📍 लोकेशन चुनें';
+  const displayLabel = label || defaultLabel;
+  const currentDisplay = getFriendlyLocationName(lat, lng, lang) || (isEn ? 'Location not selected yet' : 'लोकेशन अभी चुनी नहीं गई है');
 
   return (
     <div
@@ -69,7 +78,7 @@ export default function LocationPicker({
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <label style={{ fontWeight: 'bold', fontSize: '14px', color: '#1b5e20', margin: 0 }}>
-          {label} *
+          {displayLabel} *
         </label>
         {onGpsClick && (
           <button
@@ -86,61 +95,69 @@ export default function LocationPicker({
             }}
             onClick={onGpsClick}
           >
-            📡 लाइव GPS
+            {isEn ? '📡 Live GPS' : '📡 लाइव GPS'}
           </button>
         )}
       </div>
 
       <div style={{ fontSize: '11px', color: '#555', marginBottom: '10px' }}>
-        क्रम से अपना राज्य, जिला और तहसील चुनें:
+        {isEn
+          ? 'Select your State, District and Tehsil in order:'
+          : 'क्रम से अपना राज्य, ज़िला और तहसील चुनें:'}
       </div>
 
       {/* 1. State Selector */}
       <div style={{ marginBottom: '8px' }}>
         <select
-          value={selectedState}
+          value={selectedStateKey}
           onChange={(e) => handleStateChange(e.target.value)}
-          style={{ padding: '9px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid #ced6ce' }}
+          style={{ padding: '9px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid #ced6ce', width: '100%' }}
         >
-          <option value="">-- 1. पहले राज्य (State) चुनें --</option>
-          {STATES_DATA.map((s) => (
-            <option key={s.name} value={s.name}>
-              🏛️ {s.name}
+          <option value="">
+            {isEn ? '-- 1. Select State / UT --' : '-- 1. पहले राज्य चुनें --'}
+          </option>
+          {STATES_ALL.map((s) => (
+            <option key={s.key} value={s.key}>
+              🏛️ {isEn ? s.en : s.hi}
             </option>
           ))}
         </select>
       </div>
 
-      {/* 2. District Selector (Appears when state is chosen) */}
-      {selectedState && (
+      {/* 2. District Selector */}
+      {selectedStateKey && (
         <div style={{ marginBottom: '8px' }}>
           <select
-            value={selectedDistrict}
+            value={selectedDistKey}
             onChange={(e) => handleDistrictChange(e.target.value)}
-            style={{ padding: '9px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid #ced6ce' }}
+            style={{ padding: '9px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid #ced6ce', width: '100%' }}
           >
-            <option value="">-- 2. अब जिला (District) चुनें --</option>
+            <option value="">
+              {isEn ? '-- 2. Select District --' : '-- 2. अब ज़िला चुनें --'}
+            </option>
             {districtList.map((d) => (
-              <option key={d.name} value={d.name}>
-                📍 {d.name}
+              <option key={d.key} value={d.key}>
+                📍 {isEn ? d.en : d.hi}
               </option>
             ))}
           </select>
         </div>
       )}
 
-      {/* 3. Tehsil Selector (Appears when district is chosen) */}
-      {selectedDistrict && (
+      {/* 3. Tehsil Selector */}
+      {selectedDistKey && tehsilList.length > 0 && (
         <div style={{ marginBottom: '8px' }}>
           <select
-            value={selectedTehsil}
+            value={selectedTehsilKey}
             onChange={(e) => handleTehsilChange(e.target.value)}
-            style={{ padding: '9px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid #ced6ce' }}
+            style={{ padding: '9px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid #ced6ce', width: '100%' }}
           >
-            <option value="">-- 3. अब अपनी तहसील (Tehsil) चुनें --</option>
-            {tehsilList.map((t) => (
-              <option key={t.name} value={t.name}>
-                🏘️ {t.name}
+            <option value="">
+              {isEn ? '-- 3. Select Tehsil / Area (Optional) --' : '-- 3. तहसील / क्षेत्र चुनें (वैकल्पिक) --'}
+            </option>
+            {tehsilList.map((t, idx) => (
+              <option key={idx} value={isEn ? t.en : t.hi}>
+                🏘️ {isEn ? t.en : t.hi}
               </option>
             ))}
           </select>
@@ -164,7 +181,8 @@ export default function LocationPicker({
       >
         <span>📍</span>
         <span>
-          चुनी हुई लोकेशन: <b>{currentDisplay}</b>
+          {isEn ? 'Selected Location: ' : 'चुनी हुई लोकेशन: '}
+          <b>{currentDisplay}</b>
         </span>
       </div>
 
@@ -172,18 +190,17 @@ export default function LocationPicker({
       {showVillageInput && onVillageChange && (
         <div style={{ marginTop: '8px' }}>
           <label style={{ fontSize: '12px', color: '#555', marginBottom: '3px', display: 'block' }}>
-            गाँव / मोहल्ला / गली (Village / Locality / Street):
+            {isEn ? 'Village / Locality / Street:' : 'गाँव / मोहल्ला / गली:'}
           </label>
           <input
             type="text"
             value={village}
             onChange={(e) => onVillageChange(e.target.value)}
-            placeholder="उदा. गढ़ी, मेन मार्केट, वार्ड 4"
-            style={{ padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+            placeholder={isEn ? 'e.g. Sector 62 / Main Market / Ward 4' : 'उदा. गढ़ी, मेन मार्केट, वार्ड 4'}
+            style={{ padding: '8px 10px', fontSize: '13px', borderRadius: '8px', width: '100%' }}
           />
         </div>
       )}
     </div>
   );
 }
-

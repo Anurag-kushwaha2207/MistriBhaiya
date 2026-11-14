@@ -599,7 +599,7 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
         if d is not None and (d > r or (respect_worker_radius and d > w["radius_km"])):
             continue
         st = effective_status(w, ranges[w["id"]], d0, now)
-        if free_only and st != "free":
+        if st != "free":
             continue
         pub = worker_public(w, w, st, d)
         raw_phone = w["phone"] if "phone" in w.keys() else ""
@@ -610,7 +610,7 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
     if not out and rows and expand:
         for w in rows:
             st = effective_status(w, ranges[w["id"]], d0, now)
-            if free_only and st != "free":
+            if st != "free":
                 continue
             d = haversine_km(w_lat, w_lng, w["lat"], w["lng"]) if (w["lat"] is not None and w["lng"] is not None) else None
             pub = worker_public(w, w, st, d)
@@ -627,11 +627,13 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
         out.sort(key=lambda x: (x["distance_km"] if x.get("distance_km") is not None else 999))
     else:  # smart: free first, then nearest
         out.sort(key=lambda x: (order[x["status"]], x["distance_km"] if x.get("distance_km") is not None else 999))
-    return {"workers": out[:limit], "radius_km": r, "count": len(out)}
+    lim = limit if isinstance(limit, int) else 50
+    return {"workers": out[:lim], "radius_km": r, "count": len(out)}
 
 @app.post("/api/jobs")
 async def create_job(req: JobReq, u=Depends(current_user)):
-    need_role(u, "customer")
+    if u["role"] not in ("customer", "contractor"):
+        raise HTTPException(403, "Only customers and contractors can book workers")
     if req.skill not in SKILLS:
         raise HTTPException(400, "Unknown skill")
     
@@ -712,7 +714,8 @@ async def create_job(req: JobReq, u=Depends(current_user)):
 
 @app.get("/api/jobs/mine")
 def my_jobs(u=Depends(current_user)):
-    need_role(u, "customer")
+    if u["role"] not in ("customer", "contractor"):
+        raise HTTPException(403, "Only customers and contractors can book workers")
     with db() as c:
         rows = c.execute("SELECT * FROM jobs WHERE customer_id=? ORDER BY created_at DESC LIMIT 100", (u["id"],)).fetchall()
     return {"jobs": [dict(r) for r in rows]}
@@ -737,7 +740,8 @@ async def job_interest(job_id: int, req: Optional[InterestReq] = None, u=Depends
 
 @app.get("/api/jobs/{job_id}/interested")
 def job_interested(job_id: int, u=Depends(current_user)):
-    need_role(u, "customer")
+    if u["role"] not in ("customer", "contractor"):
+        raise HTTPException(403, "Only customers and contractors can book workers")
     with db() as c:
         j = c.execute("SELECT * FROM jobs WHERE id=? AND customer_id=?", (job_id, u["id"])).fetchone()
         if not j:
@@ -765,7 +769,8 @@ def cancel_job(job_id: int, u=Depends(current_user)):
 # ---------------------------------------------------------------- bookings
 @app.post("/api/bookings")
 async def create_booking(req: BookingReq, u=Depends(current_user)):
-    need_role(u, "customer")
+    if u["role"] not in ("customer", "contractor"):
+        raise HTTPException(403, "Only customers and contractors can book workers")
     if req.skill not in SKILLS:
         raise HTTPException(400, "Unknown skill")
     start_date_str = req.start_date if req.start_date else today().isoformat()
@@ -822,8 +827,6 @@ async def create_booking(req: BookingReq, u=Depends(current_user)):
 @app.get("/api/bookings/mine")
 @app.get("/api/bookings")
 def my_bookings(u=Depends(current_user)):
-    if u["role"] == "contractor":
-        return {"bookings": []}
     col = "worker_id" if u["role"] == "worker" else "customer_id"
     with db() as c:
         rows = c.execute(f"SELECT * FROM bookings WHERE {col}=? ORDER BY created_at DESC LIMIT 100", (u["id"],)).fetchall()
@@ -985,7 +988,8 @@ async def update_booking_status(bid: int, req: BookingStatusReq, u=Depends(curre
 
 @app.post("/api/bookings/{bid}/rate")
 def rate(bid: int, req: RateReq, u=Depends(current_user)):
-    need_role(u, "customer")
+    if u["role"] not in ("customer", "contractor"):
+        raise HTTPException(403, "Only customers and contractors can book workers")
     star_val = req.star_count
     with db() as c:
         b = get_booking(c, bid, u)
@@ -1135,7 +1139,8 @@ async def advance_instant(c, rid):
 @app.post("/api/instant")
 @app.post("/api/instant/start")
 async def instant_create(req: InstantReq, u=Depends(current_user)):
-    need_role(u, "customer")
+    if u["role"] not in ("customer", "contractor"):
+        raise HTTPException(403, "Only customers and contractors can book workers")
     check_latlng(req.lat, req.lng)
     skill = "rajmistri" if req.skill in ("mistri", "rajmistri") else req.skill
     if skill not in SKILLS:

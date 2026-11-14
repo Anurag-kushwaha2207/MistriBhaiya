@@ -630,6 +630,7 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
           <LocationPicker
             lat={regLat}
             lng={regLng}
+            lang={lang}
             onLocationSelect={({ lat, lng }) => {
               setRegLat(lat);
               setRegLng(lng);
@@ -638,7 +639,7 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
             village={village}
             onVillageChange={setVillage}
             onGpsClick={handleFetchGps}
-            label="📍 लोकेशन (राज्य ➔ जिला ➔ तहसील)"
+            label={lang === 'en' ? '📍 Location (State ➔ District ➔ Tehsil)' : '📍 लोकेशन (राज्य ➔ ज़िला ➔ तहसील)'}
             showVillageInput={true}
           />
 

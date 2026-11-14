@@ -449,6 +449,7 @@ export default function ProfileModal({
             <LocationPicker
               lat={editLat}
               lng={editLng}
+              lang={lang}
               onLocationSelect={({ lat, lng }) => {
                 setEditLat(lat);
                 setEditLng(lng);
@@ -456,7 +457,7 @@ export default function ProfileModal({
               village={village}
               onVillageChange={setVillage}
               onGpsClick={handleUpdateLocation}
-              label="📍 लोकेशन (राज्य ➔ जिला ➔ तहसील)"
+              label={lang === 'en' ? '📍 Location (State ➔ District ➔ Tehsil)' : '📍 लोकेशन (राज्य ➔ ज़िला ➔ तहसील)'}
               showVillageInput={false}
             />
 
@@ -503,7 +504,7 @@ export default function ProfileModal({
                 <div className="sub">📍 शहर / लोकेशन (GPS)</div>
                 <div className="val" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 'bold', color: profile?.lat != null ? 'var(--g)' : 'var(--red)' }}>
-                    {profile?.lat != null ? `📍 ${getFriendlyLocationName(profile.lat, profile.lng) || getCityNameFromCoords(profile.lat, profile.lng)}` : '❌ सेट नहीं'}
+                    {profile?.lat != null ? `📍 ${getFriendlyLocationName(profile.lat, profile.lng, lang) || getCityNameFromCoords(profile.lat, profile.lng)}` : (lang === 'en' ? '❌ Not set' : '❌ सेट नहीं')}
                   </span>
                   <button
                     type="button"

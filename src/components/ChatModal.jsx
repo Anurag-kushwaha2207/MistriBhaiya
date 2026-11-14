@@ -18,6 +18,7 @@ export default function ChatModal({
   const endRef = useRef(null);
 
   const bookingId = booking?.id;
+  const kind = booking?.kind || 'bookings';
   const otherName = booking?.other_name || (user?.role === 'worker' ? booking?.customer_name : booking?.worker_name) || 'साथी';
   const otherPhone = booking?.other_phone || (user?.role === 'worker' ? booking?.customer_phone : booking?.worker_phone) || '';
   const otherId = booking?.other_id || (user?.role === 'worker' ? booking?.customer_id : booking?.worker_id);
@@ -34,7 +35,7 @@ export default function ChatModal({
     if (!bookingId) return;
     setLoading(true);
     try {
-      const res = await api(`/bookings/${bookingId}/messages`, 'GET', null, token);
+      const res = await api(`/${kind}/${bookingId}/messages`, 'GET', null, token);
       setMessages(res.messages || []);
       setTimeout(() => scrollToBottom(false), 80);
     } catch (err) {
@@ -84,7 +85,7 @@ export default function ChatModal({
 
     setSending(true);
     try {
-      const res = await api(`/bookings/${bookingId}/messages`, 'POST', { text: cleanText }, token);
+      const res = await api(`/${kind}/${bookingId}/messages`, 'POST', { text: cleanText }, token);
       setMessages(prev => [
         ...prev,
         {

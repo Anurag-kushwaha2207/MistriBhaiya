@@ -487,6 +487,7 @@ export default function App() {
                 user={user}
                 profile={profile}
                 token={token}
+                lang={lang}
                 onUpdateProfile={setProfile}
                 showToast={showToast}
                 t={t}
@@ -541,6 +542,8 @@ export default function App() {
                 meta={meta}
                 lang={lang}
                 onOpenProject={(c) => setProjectContractor(c)}
+                onOpenChat={(b) => setActiveChatBooking(b)}
+                onStartCall={(target) => setCallTarget(target)}
                 showToast={showToast}
                 t={t}
               />
@@ -562,6 +565,8 @@ export default function App() {
                 token={token}
                 meta={meta}
                 lang={lang}
+                onOpenChat={(b) => setActiveChatBooking(b)}
+                onStartCall={(target) => setCallTarget(target)}
                 showToast={showToast}
                 t={t}
               />
@@ -570,6 +575,8 @@ export default function App() {
               <ContractorProjects
                 token={token}
                 onOpenCounter={(kind, id, onDone) => setCounterData({ kind, id, onDone })}
+                onOpenChat={(b) => setActiveChatBooking(b)}
+                onStartCall={(target) => setCallTarget(target)}
                 showToast={showToast}
                 t={t}
               />

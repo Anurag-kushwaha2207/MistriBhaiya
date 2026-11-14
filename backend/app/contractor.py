@@ -392,7 +392,7 @@ async def project_create(req: ProjectReq, u=Depends(current_user)):
 def projects_mine(u=Depends(current_user)):
     col = "contractor_id" if u["role"] == "contractor" else "customer_id"
     with db() as c:
-        rows = c.execute(f"SELECT p.*,cu.name AS customer_name,ku.name AS contractor_name FROM projects p JOIN users cu ON cu.id=p.customer_id JOIN users ku ON ku.id=p.contractor_id "
+        rows = c.execute(f"SELECT p.*,cu.name AS customer_name,cu.phone AS customer_phone,ku.name AS contractor_name,ku.phone AS contractor_phone FROM projects p JOIN users cu ON cu.id=p.customer_id JOIN users ku ON ku.id=p.contractor_id "
                          f"WHERE p.{col}=? ORDER BY p.created_at DESC LIMIT 100", (u["id"],)).fetchall()
         out = []
         for p in rows:

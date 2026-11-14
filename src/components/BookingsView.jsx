@@ -208,7 +208,7 @@ export default function BookingsView({
             </div>
 
             <div className="sub" style={{ margin: '6px 0 4px', fontSize: '13px' }}>
-              👤 <b>{otherName}</b> · 📅 {b.start_date || '-'} · ⏱️ {b.days || 1} {t('days')}
+              📅 {b.start_date || '-'} · ⏱️ {b.days || 1} {t('days')}
             </div>
 
             {/* Agreed Rate / Counter Rate Display */}
@@ -216,8 +216,46 @@ export default function BookingsView({
               ₹{currentRate} / {t('daySfx') || 'दिन'}
             </div>
 
-            {b.address && <div className="sub" style={{ fontSize: '12px' }}>📍 {b.address}</div>}
-            {b.note && <div className="sub" style={{ fontSize: '12px', fontStyle: 'italic' }}>📝 "{b.note}"</div>}
+            {/* Prominent Contact & Address Info for Worker / Customer */}
+            <div style={{ background: '#f8faf8', border: '1px solid #dceedc', borderRadius: '8px', padding: '10px 12px', margin: '8px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#222' }}>
+                  👤 {otherName}
+                </div>
+                {b.other_phone && (
+                  <a
+                    href={`tel:${b.other_phone}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: '#e8f5e9',
+                      color: '#2e7d32',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontWeight: 'bold',
+                      fontSize: '12px',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    📞 {b.other_phone}
+                  </a>
+                )}
+              </div>
+
+              <div style={{ fontSize: '13px', color: '#333', marginTop: '6px' }}>
+                📍 <b>{lang === 'en' ? 'Site Address: ' : 'काम की जगह / पता: '}</b>
+                <span style={{ color: '#1b5e20', fontWeight: '600' }}>
+                  {b.address || (lang === 'en' ? 'Address not specified' : 'पते की जानकारी नहीं दी गई')}
+                </span>
+              </div>
+
+              {b.note && (
+                <div style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '4px' }}>
+                  📝 "{b.note}"
+                </div>
+              )}
+            </div>
 
             {/* OTP display for customer once accepted & ₹10 paid */}
             {!isWorker && b.status === 'accepted' && Boolean(b.advance_paid) && Boolean(b.start_otp) && (
