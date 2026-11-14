@@ -463,9 +463,9 @@ async def project_set_status(pid: int, req: ProjectStatusReq, u=Depends(current_
         curr_st = p["status"]
 
         if curr_st == "requested":
-            if new_st == "accepted":
-                raise HTTPException(400, "Projects must be accepted via negotiation offer acceptance.")
-            elif new_st in ("rejected", "declined"):
+            if new_st in ("accepted", "accept"):
+                event_st = "accepted"
+            elif new_st in ("rejected", "declined", "reject"):
                 event_st = "rejected"
             elif new_st == "cancelled":
                 event_st = "cancelled"

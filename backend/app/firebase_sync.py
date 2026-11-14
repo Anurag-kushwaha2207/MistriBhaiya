@@ -89,7 +89,7 @@ def get_fs_doc(collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def save_credential(phone: str, user_id: int, password_hash: str, name: str, role: str):
+def save_credential(phone: str, user_id: int, password_hash: str, name: str, role: str, avatar: str = ""):
     """Store user credential in Firestore so it persists across container restarts."""
     data = {
         "phone": phone,
@@ -97,6 +97,7 @@ def save_credential(phone: str, user_id: int, password_hash: str, name: str, rol
         "password_hash": password_hash,
         "name": name,
         "role": role,
+        "avatar": avatar or "",
         "updated_at": time.time(),
     }
     push_to_firebase("auth_credentials", str(phone), data)

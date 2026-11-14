@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { api, getLoc, setLocCache } from '../api';
+import { api, getLoc, setLocCache, compressAndResizeImage } from '../api';
 import { syncUser, syncWorkerProfile, syncContractorProfile } from '../firebase';
 import { CITIES, getCityNameFromCoords } from './ProfileModal';
+import LocationPicker from './LocationPicker';
 
 const DEFAULT_SKILLS = [
   { key: 'rajmistri', hi: 'राजमिस्त्री', en: 'Mason' },
@@ -49,6 +50,8 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
   const [minBudget, setMinBudget] = useState('15000');
   const [regLat, setRegLat] = useState(null);
   const [regLng, setRegLng] = useState(null);
+  const [regAvatar, setRegAvatar] = useState('');
+  const [avatarLoading, setAvatarLoading] = useState(false);
 
   const cleanPhone = phone.trim().replace(/\D/g, '').slice(-10);
 
@@ -58,6 +61,22 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     setSelectedSkills(prev =>
       prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]
     );
+  };
+
+  const handleAvatarFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      setAvatarLoading(true);
+      showToast("फोटो प्रोसेस हो रही है...");
+      const base64Data = await compressAndResizeImage(file, 320, 0.82);
+      setRegAvatar(base64Data);
+      showToast("✅ फोटो लग गई!");
+    } catch (err) {
+      showToast("फोटो अपलोड में विफल: " + (err.message || ''));
+    } finally {
+      setAvatarLoading(false);
+    }
   };
 
   const handleSelectCity = (cityName) => {
@@ -132,6 +151,18 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
     setOtp('');
     setDevOtp('');
     try {
+      if (view === 'register') {
+        try {
+          const chk = await api('/auth/check-phone', 'POST', { phone: cleanPhone });
+          if (chk && chk.exists) {
+            setLoading(false);
+            showToast('⚠️ इस मोबाइल नंबर पर पहले से अकाउंट मौजूद है! कृपया पासवर्ड से लॉगिन करें।');
+            setView('login');
+            return;
+          }
+        } catch (e) {}
+      }
+
       const res = await api('/auth/request-otp', 'POST', { phone: cleanPhone });
       setOtpSent(true);
 
@@ -245,6 +276,8 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
         lat: regLat,
         lng: regLng,
         village: village.trim(),
+        avatar: regAvatar || '',
+        is_register: true,
         firebase_token: fbToken
       };
 
@@ -519,6 +552,58 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
             </button>
           </div>
 
+          {/* Avatar Photo Selection */}
+          <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+            <div
+              style={{
+                width: '76px',
+                height: '76px',
+                borderRadius: '50%',
+                margin: '0 auto 6px',
+                overflow: 'hidden',
+                background: '#e8f5e9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px dashed #2e7d32',
+                cursor: 'pointer'
+              }}
+              onClick={() => document.getElementById('reg-avatar-input')?.click()}
+            >
+              {regAvatar ? (
+                <img src={regAvatar} alt="Photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <span style={{ fontSize: '30px' }}>📷</span>
+              )}
+            </div>
+            <input
+              id="reg-avatar-input"
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleAvatarFile}
+            />
+            <button
+              type="button"
+              className="sec"
+              style={{ fontSize: '11px', padding: '4px 10px' }}
+              onClick={() => document.getElementById('reg-avatar-input')?.click()}
+              disabled={avatarLoading}
+            >
+              {regAvatar ? '📷 फोटो बदलें' : '📷 अपनी फोटो लगाएं (Optional)'}
+            </button>
+            {regAvatar && (
+              <button
+                type="button"
+                className="warn"
+                style={{ fontSize: '11px', padding: '4px 8px', marginLeft: '6px' }}
+                onClick={() => setRegAvatar('')}
+              >
+                हटाएं
+              </button>
+            )}
+          </div>
+
           {/* Personal info */}
           <label style={{ fontWeight: 'bold', marginBottom: '4px' }}>आपका पूरा नाम (Full Name) *</label>
           <input
@@ -541,46 +626,21 @@ export default function LoginView({ onLoginSuccess, meta, lang = 'hi', showToast
             required
           />
 
-          {/* Location details */}
-          <div style={{ padding: '12px', background: '#f5f7f5', borderRadius: '8px', border: '1px solid #e0e7e0', marginBottom: '14px' }}>
-            <label style={{ fontWeight: 'bold', marginBottom: '6px', display: 'block' }}>
-              📍 शहर / लोकेशन चुनें (City / Location) *
-            </label>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-              <select
-                value={getCityNameFromCoords(regLat, regLng) || ''}
-                onChange={(e) => handleSelectCity(e.target.value)}
-                style={{ flex: 1, padding: '8px', fontSize: '13px' }}
-              >
-                <option value="">-- शहर चुनें (Delhi, Noida, Lucknow, etc.) --</option>
-                {CITIES.map(c => (
-                  <option key={c.name} value={c.name}>{c.name}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="sec"
-                style={{ padding: '8px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                onClick={handleFetchGps}
-              >
-                📡 लाइव GPS
-              </button>
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--g)' }}>
-              चुनी लोकेशन: <b>📍 {getCityNameFromCoords(regLat, regLng)}</b>
-            </div>
-
-            <label style={{ fontWeight: 'bold', margin: '10px 0 4px', display: 'block' }}>
-              गाँव / मोहल्ला / पता (Village / Area)
-            </label>
-            <input
-              type="text"
-              value={village}
-              onChange={(e) => setVillage(e.target.value)}
-              placeholder="उदा. सेक्टर 62 / गढ़ी / चौक"
-              style={{ marginBottom: '0' }}
-            />
-          </div>
+          {/* Cascading 3-tier Location Selector */}
+          <LocationPicker
+            lat={regLat}
+            lng={regLng}
+            onLocationSelect={({ lat, lng }) => {
+              setRegLat(lat);
+              setRegLng(lng);
+              setLocCache({ lat, lng });
+            }}
+            village={village}
+            onVillageChange={setVillage}
+            onGpsClick={handleFetchGps}
+            label="📍 लोकेशन (राज्य ➔ जिला ➔ तहसील)"
+            showVillageInput={true}
+          />
 
           {/* Worker specific profile fields */}
           {role === 'worker' && (

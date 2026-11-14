@@ -4,9 +4,11 @@ import { api } from '../api';
 export default function ContractorProjects({ token, onOpenCounter, showToast, t }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState('all'); // 'all' | 'requested' | 'active' | 'completed'
   const [assignModalProject, setAssignModalProject] = useState(null);
   const [crewList, setCrewList] = useState([]);
   const [selectedCrew, setSelectedCrew] = useState([]);
+  const [actionLoading, setActionLoading] = useState(null);
 
   const loadProjects = async () => {
     setLoading(true);
@@ -14,7 +16,7 @@ export default function ContractorProjects({ token, onOpenCounter, showToast, t 
       const res = await api('/contractor/projects', 'GET', null, token);
       setProjects(res.projects || []);
     } catch (err) {
-      showToast(err.message || "Failed to load projects");
+      showToast(err.message || "प्रोजेक्ट लोड करने में विफल");
     } finally {
       setLoading(false);
     }
@@ -24,13 +26,16 @@ export default function ContractorProjects({ token, onOpenCounter, showToast, t 
     loadProjects();
   }, [token]);
 
-  const handleStatusChange = async (projectId, status) => {
+  const handleStatusChange = async (projectId, status, successMsg) => {
+    setActionLoading(projectId);
     try {
       await api(`/contractor/projects/${projectId}/status`, 'POST', { status }, token);
-      showToast(t('saved'));
-      loadProjects();
+      showToast(successMsg || t('saved') || 'सफलतापूर्वक अपडेट हुआ!');
+      await loadProjects();
     } catch (err) {
-      showToast(err.message || "Status change failed");
+      showToast(err.message || "स्टेटस बदलने में विफल");
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -41,7 +46,7 @@ export default function ContractorProjects({ token, onOpenCounter, showToast, t 
       setSelectedCrew(p.assigned_crew || []);
       setAssignModalProject(p);
     } catch (err) {
-      showToast(err.message || "Failed to load crew");
+      showToast(err.message || "लेबर/साथी लोड नहीं हो सके");
     }
   };
 
@@ -51,11 +56,11 @@ export default function ContractorProjects({ token, onOpenCounter, showToast, t 
       await api(`/contractor/projects/${assignModalProject.id}/assign`, 'POST', {
         crew_ids: selectedCrew
       }, token);
-      showToast(t('assignedOk'));
+      showToast(t('assignedOk') || "साथी सफलतापूर्वक जोड़े गए!");
       setAssignModalProject(null);
       loadProjects();
     } catch (err) {
-      showToast(err.message || "Assign failed");
+      showToast(err.message || "साथी जोड़ने में विफल");
     }
   };
 
@@ -67,81 +72,236 @@ export default function ContractorProjects({ token, onOpenCounter, showToast, t 
     }
   };
 
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'requested':
+        return <span className="pill" style={{ background: '#f57c00', color: '#fff' }}>🟡 नया अनुरोध</span>;
+      case 'accepted':
+        return <span className="pill" style={{ background: '#1976d2', color: '#fff' }}>🟢 स्वीकृत (तैयार)</span>;
+      case 'in_progress':
+        return <span className="pill" style={{ background: '#2e7d32', color: '#fff' }}>🏗️ काम चालू</span>;
+      case 'completed':
+        return <span className="pill" style={{ background: '#388e3c', color: '#fff' }}>✅ संपन्न</span>;
+      case 'rejected':
+        return <span className="pill" style={{ background: '#d32f2f', color: '#fff' }}>❌ अस्वीकृत</span>;
+      case 'cancelled':
+        return <span className="pill" style={{ background: '#757575', color: '#fff' }}>❌ रद्द</span>;
+      default:
+        return <span className="pill offline">{status}</span>;
+    }
+  };
+
+  const filteredProjects = projects.filter((p) => {
+    if (filter === 'requested') return p.status === 'requested';
+    if (filter === 'active') return p.status === 'accepted' || p.status === 'in_progress';
+    if (filter === 'completed') return p.status === 'completed';
+    return true;
+  });
+
   return (
     <div>
-      <div className="card">
-        <h2>🏗️ {t('projects')}</h2>
+      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0 }}>🏗️ {t('projects') || 'ठेकेदार प्रोजेक्ट्स'}</h2>
+        <button className="sec" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={loadProjects} disabled={loading}>
+          🔄 रिफ्रेश
+        </button>
+      </div>
+
+      {/* Filter Tabs */}
+      <div style={{ display: 'flex', gap: '6px', margin: '0 0 12px', overflowX: 'auto', paddingBottom: '4px' }}>
+        <button
+          className={filter === 'all' ? '' : 'sec'}
+          style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+          onClick={() => setFilter('all')}
+        >
+          सभी ({projects.length})
+        </button>
+        <button
+          className={filter === 'requested' ? '' : 'sec'}
+          style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+          onClick={() => setFilter('requested')}
+        >
+          🟡 नए अनुरोध ({projects.filter(p => p.status === 'requested').length})
+        </button>
+        <button
+          className={filter === 'active' ? '' : 'sec'}
+          style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+          onClick={() => setFilter('active')}
+        >
+          🏗️ चालू प्रोजेक्ट्स ({projects.filter(p => p.status === 'accepted' || p.status === 'in_progress').length})
+        </button>
+        <button
+          className={filter === 'completed' ? '' : 'sec'}
+          style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+          onClick={() => setFilter('completed')}
+        >
+          ✅ पूर्ण ({projects.filter(p => p.status === 'completed').length})
+        </button>
       </div>
 
       {loading && <div style={{ textAlign: 'center', padding: '16px' }} className="sub">लोड हो रहा है…</div>}
 
-      {!loading && projects.length === 0 && (
+      {!loading && filteredProjects.length === 0 && (
         <div className="card" style={{ textAlign: 'center', padding: '24px' }}>
           <div style={{ fontSize: '36px', marginBottom: '8px' }}>🏗️</div>
-          <div>{t('noProjects')}</div>
+          <div>{filter === 'requested' ? 'कोई नया अनुरोध नहीं आया है' : (t('noProjects') || 'कोई प्रोजेक्ट नहीं मिला')}</div>
         </div>
       )}
 
-      {projects.map((p) => (
-        <div key={p.id} className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <b style={{ fontSize: '17px' }}>{p.title}</b>
-            <span className={`pill ${p.status === 'completed' ? 'free' : p.status === 'active' ? 'busy' : 'offline'}`}>
-              {p.status}
-            </span>
-          </div>
+      {filteredProjects.map((p) => {
+        const isBusy = actionLoading === p.id;
+        return (
+          <div
+            key={p.id}
+            className="card"
+            style={{
+              borderLeft: p.status === 'requested' ? '4px solid #f57c00' : p.status === 'in_progress' ? '4px solid #2e7d32' : '4px solid #e0e0e0',
+              marginBottom: '12px'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+              <div>
+                <b style={{ fontSize: '17px', color: '#222' }}>{p.title}</b>
+                <div className="sub" style={{ margin: '4px 0', fontSize: '13px' }}>
+                  👤 ग्राहक: <b>{p.customer_name || t('customer') || 'Customer'}</b>
+                  {p.workers_needed ? ` · 👥 ${p.workers_needed} लेबर/कारीगर चाहिए` : ''}
+                  {p.days ? ` · ⏱️ ${p.days} दिन` : ''}
+                </div>
+              </div>
+              <div>{getStatusBadge(p.status)}</div>
+            </div>
 
-          <div className="sub" style={{ margin: '4px 0' }}>
-            👤 {p.customer_name || t('customer')} · 👥 {p.workers_needed || 1} {t('workersNeeded')}
-          </div>
-
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--g)', margin: '4px 0' }}>
-            ₹{(p.total_budget || 0).toLocaleString('en-IN')}
-          </div>
-
-          {p.description && <p style={{ fontSize: '14px', margin: '6px 0' }}>{p.description}</p>}
-
-          <div className="row" style={{ marginTop: '10px' }}>
-            <button className="sec" onClick={() => openAssignModal(p)}>
-              👥 {t('assignCrew')}
-            </button>
-            {p.status === 'pending' && (
-              <button onClick={() => handleStatusChange(p.id, 'active')}>
-                {t('startProject')}
-              </button>
+            {p.address && (
+              <div style={{ fontSize: '12px', color: '#666', margin: '3px 0' }}>
+                📍 साइट: {p.address}
+              </div>
             )}
-            {p.status === 'active' && (
-              <button style={{ background: '#2e7d32' }} onClick={() => handleStatusChange(p.id, 'completed')}>
-                {t('finish')}
-              </button>
+
+            <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--g)', margin: '6px 0' }}>
+              बजट: ₹{(p.total_budget || p.budget || 0).toLocaleString('en-IN')}
+            </div>
+
+            {p.description && (
+              <p style={{ fontSize: '13px', margin: '6px 0', background: '#f9f9f9', padding: '8px 10px', borderRadius: '6px', color: '#444' }}>
+                {p.description}
+              </p>
             )}
-            <button className="sec" onClick={() => onOpenCounter('projects', p.id, loadProjects)}>
-              ↔️ {t('counter')}
-            </button>
+
+            {/* Action Buttons depending on status */}
+            <div className="row" style={{ marginTop: '12px', gap: '8px', flexWrap: 'wrap' }}>
+              {/* 1. Status: REQUESTED */}
+              {p.status === 'requested' && (
+                <>
+                  <button
+                    style={{ background: '#2e7d32', color: '#fff', fontWeight: 'bold' }}
+                    onClick={() => handleStatusChange(p.id, 'accepted', '🎉 प्रोजेक्ट अनुरोध स्वीकार कर लिया गया!')}
+                    disabled={isBusy}
+                  >
+                    ✅ स्वीकार करें (Accept)
+                  </button>
+                  <button
+                    className="sec"
+                    style={{ fontWeight: 'bold' }}
+                    onClick={() => onOpenCounter('projects', p.id, loadProjects)}
+                    disabled={isBusy}
+                  >
+                    ↔️ मोलभाव (Counter Offer)
+                  </button>
+                  <button
+                    className="warn"
+                    style={{ fontSize: '12px' }}
+                    onClick={() => {
+                      if (window.confirm("क्या आप इस प्रोजेक्ट को अस्वीकार करना चाहते हैं?")) {
+                        handleStatusChange(p.id, 'rejected', 'प्रोजेक्ट अस्वीकार कर दिया गया');
+                      }
+                    }}
+                    disabled={isBusy}
+                  >
+                    ❌ अस्वीकार
+                  </button>
+                </>
+              )}
+
+              {/* 2. Status: ACCEPTED */}
+              {p.status === 'accepted' && (
+                <>
+                  <button
+                    style={{ background: '#1976d2', color: '#fff', fontWeight: 'bold' }}
+                    onClick={() => handleStatusChange(p.id, 'in_progress', '🏗️ प्रोजेक्ट का काम शुरू हो गया!')}
+                    disabled={isBusy}
+                  >
+                    ▶️ काम शुरू करें (Start Work)
+                  </button>
+                  <button className="sec" onClick={() => openAssignModal(p)} disabled={isBusy}>
+                    👥 साथी / लेबर जोड़ें ({p.crew_assigned || 0})
+                  </button>
+                  <button
+                    className="warn"
+                    style={{ fontSize: '12px' }}
+                    onClick={() => {
+                      if (window.confirm("क्या आप प्रोजेक्ट रद्द करना चाहते हैं?")) {
+                        handleStatusChange(p.id, 'cancelled', 'प्रोजेक्ट रद्द किया गया');
+                      }
+                    }}
+                    disabled={isBusy}
+                  >
+                    रद्द करें
+                  </button>
+                </>
+              )}
+
+              {/* 3. Status: IN_PROGRESS */}
+              {p.status === 'in_progress' && (
+                <>
+                  <button
+                    style={{ background: '#2e7d32', color: '#fff', fontWeight: 'bold' }}
+                    onClick={() => handleStatusChange(p.id, 'completed', '🎉 बधाई! प्रोजेक्ट पूरा हुआ दर्ज किया गया!')}
+                    disabled={isBusy}
+                  >
+                    🏁 काम पूरा हुआ (Mark Completed)
+                  </button>
+                  <button className="sec" onClick={() => openAssignModal(p)} disabled={isBusy}>
+                    👥 साथी / लेबर जोड़ें ({p.crew_assigned || 0})
+                  </button>
+                </>
+              )}
+
+              {/* 4. Status: COMPLETED */}
+              {p.status === 'completed' && (
+                <div style={{ fontSize: '13px', color: '#2e7d32', fontWeight: 'bold' }}>
+                  ✅ यह प्रोजेक्ट सफलतापूर्वक पूरा हो चुका है।
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Assign Crew Modal */}
       {assignModalProject && (
         <div className="modal" onClick={(e) => { if (e.target.className === 'modal') setAssignModalProject(null); }}>
           <div className="sheet">
             <h3>👥 प्रोजेक्ट में साथी जोड़ें: {assignModalProject.title}</h3>
-            <div className="chk" style={{ margin: '14px 0' }}>
+            <div className="chk" style={{ margin: '14px 0', maxHeight: '50vh', overflowY: 'auto' }}>
+              {crewList.length === 0 && (
+                <div className="sub" style={{ padding: '12px', textAlign: 'center' }}>
+                  आपकी क्रू लिस्ट में कोई साथी नहीं है। पहले 'क्रू/साथी' टैब से साथी जोड़ें।
+                </div>
+              )}
               {crewList.map((c) => (
-                <label key={c.id} style={{ display: 'block', margin: '8px 0' }}>
+                <label key={c.id} style={{ display: 'block', margin: '8px 0', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={selectedCrew.includes(c.id)}
                     onChange={() => toggleCrewMember(c.id)}
                   />
-                  {c.name} ({c.phone || t('offlineWorker')})
+                  <b>{c.name}</b> {c.skills ? `(${c.skills})` : ''} · 📱 {c.phone || t('offlineWorker') || 'फ़ोन नहीं'}
                 </label>
               ))}
             </div>
             <div className="row">
-              <button onClick={handleSaveAssignedCrew}>{t('save')}</button>
-              <button className="sec" onClick={() => setAssignModalProject(null)}>{t('close')}</button>
+              <button onClick={handleSaveAssignedCrew}>{t('save') || 'सेव करें'}</button>
+              <button className="sec" onClick={() => setAssignModalProject(null)}>{t('close') || 'बंद करें'}</button>
             </div>
           </div>
         </div>
@@ -149,4 +309,3 @@ export default function ContractorProjects({ token, onOpenCounter, showToast, t 
     </div>
   );
 }
-

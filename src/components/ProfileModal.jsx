@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { api, getLoc, compressAndResizeImage } from '../api';
 import { syncUser, syncWorkerProfile, syncContractorProfile } from '../firebase';
+import LocationPicker from './LocationPicker';
+import { getFriendlyLocationName } from '../data/locations';
 
 export const CITIES = [
   { name: 'दिल्ली (Delhi / NCR)', lat: 28.6139, lng: 77.2090 },
@@ -443,33 +445,20 @@ export default function ProfileModal({
               </>
             )}
 
-            <div style={{ marginTop: '14px', padding: '12px', background: '#f5f7f5', borderRadius: '10px', border: '1px solid #e0e7e0' }}>
-              <label style={{ fontWeight: 'bold', marginBottom: '6px', display: 'block' }}>🏙️ अपना शहर / ज़िला चुनें (City / Location)</label>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                <select
-                  value={getCityNameFromCoords(editLat, editLng) || ''}
-                  onChange={(e) => handleSelectCity(e.target.value)}
-                  style={{ flex: 1, padding: '8px', fontSize: '13px' }}
-                >
-                  <option value="">-- शहर चुनें (Delhi, Noida, Lucknow, etc.) --</option>
-                  {CITIES.map(c => (
-                    <option key={c.name} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="sec"
-                  style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                  onClick={handleUpdateLocation}
-                  title="सटीक GPS लोकेशन"
-                >
-                  📡 लाइव GPS
-                </button>
-              </div>
-              <div style={{ fontSize: '12px', color: editLat != null ? 'var(--g)' : 'var(--red)' }}>
-                वर्तमान लोकेशन: <b>{editLat != null ? `📍 ${getCityNameFromCoords(editLat, editLng)} (${Number(editLat).toFixed(3)}, ${Number(editLng).toFixed(3)})` : '❌ सेट नहीं'}</b>
-              </div>
-            </div>
+            {/* 3-Tier Cascading Location Selector */}
+            <LocationPicker
+              lat={editLat}
+              lng={editLng}
+              onLocationSelect={({ lat, lng }) => {
+                setEditLat(lat);
+                setEditLng(lng);
+              }}
+              village={village}
+              onVillageChange={setVillage}
+              onGpsClick={handleUpdateLocation}
+              label="📍 लोकेशन (राज्य ➔ जिला ➔ तहसील)"
+              showVillageInput={false}
+            />
 
             <div className="profile-actions" style={{ marginTop: '16px' }}>
               <button className="big" onClick={handleSaveProfile} disabled={isSaving}>
@@ -514,7 +503,7 @@ export default function ProfileModal({
                 <div className="sub">📍 शहर / लोकेशन (GPS)</div>
                 <div className="val" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 'bold', color: profile?.lat != null ? 'var(--g)' : 'var(--red)' }}>
-                    {profile?.lat != null ? `📍 ${getCityNameFromCoords(profile.lat, profile.lng)}` : '❌ सेट नहीं'}
+                    {profile?.lat != null ? `📍 ${getFriendlyLocationName(profile.lat, profile.lng) || getCityNameFromCoords(profile.lat, profile.lng)}` : '❌ सेट नहीं'}
                   </span>
                   <button
                     type="button"

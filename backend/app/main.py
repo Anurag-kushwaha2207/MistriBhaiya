@@ -112,6 +112,8 @@ class VerifyReq(BaseModel):
     company: Optional[str] = None
     min_budget: Optional[int] = None
     about: Optional[str] = None
+    avatar: Optional[str] = None
+    is_register: Optional[bool] = False
     firebase_token: Optional[str] = None
 
 def verify_firebase_token(token: Optional[str]) -> Optional[str]:
@@ -313,7 +315,7 @@ def forgot_password(req: ForgotPasswordReq):
         c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
         u = c.execute("SELECT * FROM users WHERE id=?", (u["id"],)).fetchone()
         prof = get_user_profile(c, u)
-    firebase_sync.save_credential(phone, u["id"], pw_hash, u["name"], u["role"])
+    firebase_sync.save_credential(phone, u["id"], pw_hash, u["name"], u["role"], u["avatar"] or "")
     firebase_sync.sync_user(u["id"])
     return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
 
@@ -350,8 +352,9 @@ def verify(req: VerifyReq):
         pw_hash = ""
         if not u:
             pw_hash = hash_password(req.password.strip()) if req.password else ""
-            cur = c.execute("INSERT INTO users(phone,name,role,password_hash,is_admin,created_at) VALUES(?,?,?,?,?,?)",
-                            (phone, req.name.strip()[:60], req.role, pw_hash, 1 if phone in config.ADMIN_PHONES else 0, time.time()))
+            av = req.avatar or ""
+            cur = c.execute("INSERT INTO users(phone,name,role,password_hash,is_admin,avatar,created_at) VALUES(?,?,?,?,?,?,?)",
+                            (phone, req.name.strip()[:60], req.role, pw_hash, 1 if phone in config.ADMIN_PHONES else 0, av, time.time()))
             uid = cur.lastrowid
             if req.role == "worker":
                 if req.lat is None or req.lng is None:
@@ -369,6 +372,8 @@ def verify(req: VerifyReq):
                           (uid, req.company or "", skills_str, req.village or "", req.lat, req.lng, req.radius_km or 25, req.min_budget or 0, req.experience_years or 0, req.about or ""))
             u = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         else:
+            if req.is_register or (req.name and req.password):
+                raise HTTPException(400, "इस मोबाइल नंबर पर पहले से अकाउंट मौजूद है। कृपया लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
             if req.password and not u["password_hash"]:
                 pw_hash = hash_password(req.password.strip())
                 c.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, u["id"]))
@@ -379,7 +384,7 @@ def verify(req: VerifyReq):
     u_dict = dict(u)
     final_pw = u_dict.get("password_hash") or pw_hash
     if final_pw:
-        firebase_sync.save_credential(phone, u_dict["id"], final_pw, u_dict.get("name") or "", u_dict.get("role") or "customer")
+        firebase_sync.save_credential(phone, u_dict["id"], final_pw, u_dict.get("name") or "", u_dict.get("role") or "customer", u_dict.get("avatar") or "")
     firebase_sync.sync_user(u_dict["id"])
     if u_dict.get("role") == "worker":
         firebase_sync.sync_worker_profile(u_dict["id"])
@@ -404,8 +409,9 @@ def update_me(req: MeUpdate, u=Depends(current_user)):
         if req.avatar is not None:
             c.execute("UPDATE users SET avatar=? WHERE id=?", (req.avatar, u["id"]))
     u_dict = dict(u)
-    if req.name is not None and u_dict.get("phone"):
-        firebase_sync.save_credential(u_dict["phone"], u_dict["id"], u_dict.get("password_hash") or "", req.name.strip(), u_dict.get("role") or "customer")
+    av = req.avatar if req.avatar is not None else (u_dict.get("avatar") or "")
+    if u_dict.get("phone"):
+        firebase_sync.save_credential(u_dict["phone"], u_dict["id"], u_dict.get("password_hash") or "", (req.name.strip() if req.name is not None else (u_dict.get("name") or "")), u_dict.get("role") or "customer", av)
     firebase_sync.sync_user(u_dict["id"])
     if u_dict.get("role") == "worker":
         firebase_sync.sync_worker_profile(u_dict["id"])
@@ -421,6 +427,9 @@ class AvatarReq(BaseModel):
 def update_avatar(req: AvatarReq, u=Depends(current_user)):
     with db() as c:
         c.execute("UPDATE users SET avatar=? WHERE id=?", (req.avatar or "", u["id"]))
+    u_dict = dict(u)
+    if u_dict.get("phone"):
+        firebase_sync.save_credential(u_dict["phone"], u_dict["id"], u_dict.get("password_hash") or "", u_dict.get("name") or "", u_dict.get("role") or "customer", req.avatar or "")
     firebase_sync.sync_user(u["id"])
     return {"ok": True, "avatar": req.avatar}
 

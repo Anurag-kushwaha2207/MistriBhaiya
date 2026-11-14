@@ -266,32 +266,7 @@ export default function BookingsView({
               </div>
             )}
 
-            {/* Payment Receipt Link if ₹10 paid */}
-            {payments[b.id] && (
-              <div style={{
-                background: '#f9fbe7',
-                border: '1px solid #e6ee9c',
-                borderRadius: '8px',
-                padding: '6px 12px',
-                margin: '8px 0',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                fontSize: '12px'
-              }}>
-                <span style={{ color: '#33691e', fontWeight: 'bold' }}>
-                  🧾 बुकिंग टोकन: ₹{payments[b.id].amount_paise / 100} जमा
-                </span>
-                <button
-                  type="button"
-                  className="sec"
-                  style={{ padding: '2px 8px', fontSize: '11px' }}
-                  onClick={() => handleOpenReceipt(payments[b.id].id)}
-                >
-                  रसीद देखें
-                </button>
-              </div>
-            )}
+
 
             {/* CASE 1: STATUS REQUESTED (Negotiation / Pending) */}
             {b.status === 'requested' && (
