@@ -233,7 +233,7 @@ def migrate(c):
         c.commit()
         c.execute("PRAGMA foreign_keys=ON")
 
-    _add_cols(c, "users", [("password_hash", "TEXT DEFAULT ''"), ("avatar", "TEXT DEFAULT ''")])
+    _add_cols(c, "users", [("password_hash", "TEXT DEFAULT ''"), ("avatar", "TEXT DEFAULT ''"), ("is_blocked", "INTEGER DEFAULT 0")])
     _add_cols(c, "bookings", [("start_otp", "TEXT DEFAULT ''"), ("started_at", "REAL"), ("instant_id", "INTEGER"),
                               ("offer_by", "INTEGER"), ("offer_rounds", "INTEGER DEFAULT 0")])
     _add_cols(c, "job_interests", [("rate", "INTEGER DEFAULT 0")])

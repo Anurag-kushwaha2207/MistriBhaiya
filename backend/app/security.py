@@ -83,4 +83,7 @@ def current_user(authorization: str = Header(None)):
         u = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not u:
         raise HTTPException(401, "User not found")
-    return dict(u)
+    ud = dict(u)
+    if ud.get("phone") in config.ADMIN_PHONES:
+        ud["is_admin"] = 1
+    return ud

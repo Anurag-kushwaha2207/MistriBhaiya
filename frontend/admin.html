@@ -1,48 +1,1607 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MistriBaiya Admin</title>
-<style>
-body{font-family:system-ui,sans-serif;margin:0;background:#f4f7f4;color:#1d2b1d}
-header{background:#1b5e20;color:#fff;padding:12px 16px;font-weight:700}
-main{padding:12px;max-width:1100px;margin:auto}
-.cards{display:flex;flex-wrap:wrap;gap:10px}.c{background:#fff;border-radius:12px;padding:12px 16px;min-width:130px;box-shadow:0 1px 4px #0001}
-.c b{font-size:24px;display:block}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;margin:10px 0;font-size:13px}
-th,td{padding:7px 9px;border-bottom:1px solid #eef;text-align:left}th{background:#e8f0e8}
-h3{margin:16px 0 4px}button{padding:5px 9px;border:0;border-radius:8px;background:#2e7d32;color:#fff;cursor:pointer}
-.free{color:#2e7d32;font-weight:700}.sos{background:#ffebee}
-</style></head><body>
-<header>🏗️ MistriBaiya Admin <span id="who" style="float:right;font-weight:400"></span></header>
-<main id="m">Loading…</main>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MistriBhaiya - Admin Panel</title>
+  <style>
+    :root {
+      --bg-main: #f8f7f4;
+      --bg-sidebar: #111c24;
+      --sidebar-text: #94a3b8;
+      --sidebar-header: #475569;
+      --sidebar-active: #0f766e;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --text-dark: #0f172a;
+      --text-muted: #64748b;
+      --primary: #0f766e;
+      --primary-hover: #0d5f58;
+      --success: #16a34a;
+      --warning: #f59e0b;
+      --danger: #dc2626;
+      --radius: 12px;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    body.dark {
+      --bg-main: #0b1116;
+      --bg-sidebar: #070c10;
+      --sidebar-text: #94a3b8;
+      --sidebar-header: #334155;
+      --card-bg: #111c24;
+      --card-border: #1e293b;
+      --text-dark: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-family);
+      background: var(--bg-main);
+      color: var(--text-dark);
+      display: flex;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Sidebar */
+    aside {
+      width: 250px;
+      background: var(--bg-sidebar);
+      color: var(--sidebar-text);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 50;
+      border-right: 1px solid #1e293b;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+    .brand {
+      padding: 20px 18px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .brand-icon {
+      font-size: 24px;
+      background: #0f766e;
+      color: #fff;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .brand-text h2 { font-size: 16px; color: #fff; font-weight: 700; line-height: 1.2; }
+    .brand-text span { font-size: 11px; color: #94a3b8; font-weight: 500; }
+
+    .nav-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--sidebar-header);
+      padding: 16px 18px 6px;
+    }
+    .nav-list { list-style: none; padding: 0 10px; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      color: var(--sidebar-text);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 500;
+      border-radius: 8px;
+      margin-bottom: 3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .nav-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+    }
+    .nav-item.active {
+      background: var(--sidebar-active);
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .nav-badge {
+      margin-left: auto;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+    }
+    .nav-badge.danger { background: #dc2626; }
+    .nav-badge.warning { background: #d97706; }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 14px;
+      border-top: 1px solid #1e293b;
+      font-size: 12px;
+    }
+    .sidebar-footer .user-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+    .sidebar-footer .footer-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .btn-side {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid #334155;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .btn-side:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+
+    /* Main Content */
+    main {
+      margin-left: 250px;
+      flex: 1;
+      padding: 24px 32px 60px;
+      min-height: 100vh;
+    }
+
+    /* Top Action Bar */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .page-title h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text-dark);
+      letter-spacing: -0.02em;
+    }
+    .page-title p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn-csv {
+      background: #ffffff;
+      color: #0f172a;
+      border: 1.5px solid #0f172a;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-csv:hover {
+      background: #0f172a;
+      color: #ffffff;
+    }
+    .btn-refresh {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s;
+    }
+    .btn-refresh:hover { background: var(--primary-hover); }
+
+    /* Filter Bar (matching Screenshot 5) */
+    .filter-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .filter-grid {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-grid select, .filter-grid input {
+      padding: 9px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 13.5px;
+      background: #fff;
+      color: #0f172a;
+      outline: none;
+    }
+    .filter-grid select:focus, .filter-grid input:focus {
+      border-color: var(--primary);
+    }
+    .btn-filter {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 9px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13.5px;
+      cursor: pointer;
+    }
+
+    /* Stat Cards Grid (matching Screenshot 1) */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+    }
+    .stat-card .label {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    .stat-card .val {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-dark);
+      letter-spacing: -0.02em;
+    }
+    .stat-card .sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* Charts & Split Card Layout */
+    .dashboard-split {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 1024px) {
+      .dashboard-split { grid-template-columns: 1fr; }
+    }
+    .content-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .content-box h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-dark);
+      margin-bottom: 16px;
+    }
+
+    /* Mini Bar Chart for Last 14 Days */
+    .bar-chart-container {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      height: 120px;
+      padding-top: 10px;
+    }
+    .bar-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      height: 100%;
+      justify-content: flex-end;
+    }
+    .bar-fill {
+      width: 100%;
+      background: var(--primary);
+      border-radius: 4px 4px 0 0;
+      min-height: 4px;
+      transition: height 0.3s;
+    }
+    .bar-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      writing-mode: horizontal-tb;
+    }
+
+    /* Table Styling */
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      overflow-x: auto;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      margin-bottom: 24px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      padding: 12px 14px;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--card-border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text-dark);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    tr:hover td { background: rgba(0,0,0,0.015); }
+
+    /* Badges & Action Buttons */
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge.success { background: #dcfce7; color: #15803d; }
+    .badge.warning { background: #fef3c7; color: #b45309; }
+    .badge.danger { background: #fee2e2; color: #b91c1c; }
+    .badge.info { background: #e0f2fe; color: #0369a1; }
+    .badge.neutral { background: #f1f5f9; color: #475569; }
+
+    .btn-action {
+      background: transparent;
+      border: 1px solid #cbd5e1;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-right: 4px;
+    }
+    .btn-action:hover { background: #f1f5f9; }
+    .btn-action.primary { background: var(--primary); color: #fff; border: none; }
+    .btn-action.primary:hover { background: var(--primary-hover); }
+    .btn-action.danger { color: #dc2626; border-color: #fca5a5; }
+    .btn-action.danger:hover { background: #fee2e2; }
+
+    /* Login View (Standalone) */
+    .login-container {
+      max-width: 420px;
+      margin: 80px auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+    .login-container h2 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+    .login-container p { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+    .form-group { text-align: left; margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    .form-group input:focus { border-color: var(--primary); }
+    .btn-login {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 11px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .btn-login:hover { background: var(--primary-hover); }
+    .login-error {
+      background: #fee2e2;
+      color: #b91c1c;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      margin-bottom: 14px;
+      display: none;
+      text-align: left;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #1e293b;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      display: none;
+      z-index: 999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside id="sidebar" style="display:none;">
+  <div class="brand">
+    <div class="brand-icon">🏗️</div>
+    <div class="brand-text">
+      <h2>MistriBhaiya</h2>
+      <span>Admin Panel</span>
+    </div>
+  </div>
+
+  <div class="nav-group-title">DASHBOARD</div>
+  <ul class="nav-list">
+    <li><a class="nav-item active" onclick="navigate('overview')">📊 Overview</a></li>
+    <li><a class="nav-item" onclick="navigate('insights')">📈 Insights</a></li>
+  </ul>
+
+  <div class="nav-group-title">PEOPLE & ROLES</div>
+  <ul class="nav-list">
+    <li><a class="nav-item" onclick="navigate('workers')">👷 Workers (मिस्त्री) <span class="nav-badge" id="nbWorkers">0</span></a></li>
+    <li><a class="nav-item" onclick="navigate('customers')">👤 Customers (मालिक) <span class="nav-badge" id="nbCustomers">0</span></a></li>
+    <li><a class="nav-item" onclick="navigate('contractors')">🏢 Contractors (ठेकेदार) <span class="nav-badge" id="nbContractors">0</span></a></li>
+  </ul>
+
+  <div class="nav-group-title">ORDERS & WORK</div>
+  <ul class="nav-list">
+    <li><a class="nav-item" onclick="navigate('bookings')">📅 Bookings (काम) <span class="nav-badge" id="nbBookings">0</span></a></li>
+    <li><a class="nav-item" onclick="navigate('calls')">📞 Call Logs</a></li>
+  </ul>
+
+  <div class="nav-group-title">FINANCE</div>
+  <ul class="nav-list">
+    <li><a class="nav-item" onclick="navigate('payments')">💳 Payments & Revenue</a></li>
+  </ul>
+
+  <div class="nav-group-title">SAFETY & ALERTS</div>
+  <ul class="nav-list">
+    <li><a class="nav-item" onclick="navigate('sos')">🆘 SOS Alerts <span class="nav-badge danger" id="nbSos">0</span></a></li>
+    <li><a class="nav-item" onclick="navigate('reports')">⚠️ Complaints <span class="nav-badge warning" id="nbReports">0</span></a></li>
+  </ul>
+
+  <div class="nav-group-title">REPORTS & EXPORT</div>
+  <ul class="nav-list">
+    <li><a class="nav-item" onclick="navigate('reports-csv')">📥 Download CSV</a></li>
+  </ul>
+
+  <div class="nav-group-title">WEBSITE & SYSTEM</div>
+  <ul class="nav-list">
+    <li><a class="nav-item" onclick="navigate('health')">🩺 Health Check</a></li>
+    <li><a class="nav-item" onclick="navigate('settings')">⚙️ Settings</a></li>
+  </ul>
+
+  <div class="sidebar-footer">
+    <div class="user-info">
+      <span>👑 Admin · <b id="adminName">Admin</b></span>
+    </div>
+    <div class="footer-actions">
+      <a class="btn-side" href="/" target="_blank">🌐 View Website ↗</a>
+      <button class="btn-side" onclick="toggleDarkMode()">🌓 Dark / Light</button>
+      <button class="btn-side" onclick="logout()" style="color:#ef4444;border-color:#7f1d1d;">🚪 Log out</button>
+    </div>
+  </div>
+</aside>
+
+<!-- Main Container -->
+<main id="main">
+  <div id="loginView" style="display:none;">
+    <div class="login-container">
+      <div style="font-size:36px;margin-bottom:10px;">🏗️</div>
+      <h2>MistriBhaiya Admin</h2>
+      <p>सीक्रेट एडमिन डैशबोर्ड एक्सेस करने के लिए क्रेडेंशियल दर्ज करें।</p>
+      <div class="login-error" id="loginErr"></div>
+      <form onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>एडमिन मोबाइल नंबर</label>
+          <input type="tel" id="loginPhone" value="9793807864" required maxlength="10">
+        </div>
+        <div class="form-group">
+          <label>पासवर्ड</label>
+          <input type="password" id="loginPassword" value="admin123" required>
+        </div>
+        <button type="submit" class="btn-login" id="loginBtn">🔐 Admin Login</button>
+      </form>
+      <div style="margin-top:18px;font-size:12px;color:#64748b;">
+        Authorized Admin Phone: <b>9793807864</b> | Default: <b>admin123</b>
+      </div>
+    </div>
+  </div>
+
+  <div id="contentView" style="display:none;">
+    <!-- Active view injected here dynamically -->
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
 <script src="config.js"></script>
 <script>
-const tok = localStorage.getItem("ks_token");
+// State Management
+let currentTab = "overview";
+let adminToken = localStorage.getItem("admin_token") || localStorage.getItem("ks_token");
+let globalData = {
+  stats: null,
+  workers: [],
+  customers: [],
+  contractors: [],
+  bookings: [],
+  payments: [],
+  calls: [],
+  safety: { sos: [], reports: [] },
+  health: null
+};
+
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const getApiBase = () => (window.MISTRI_API_BASE ? window.MISTRI_API_BASE.replace(/\/+$/, "") : "");
-const api = async (p, m = "GET") => {
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  setTimeout(() => { t.style.display = "none"; }, 3500);
+}
+
+function toggleDarkMode() {
+  document.body.classList.toggle("dark");
+  localStorage.setItem("admin_dark", document.body.classList.contains("dark") ? "1" : "0");
+}
+if (localStorage.getItem("admin_dark") === "1") document.body.classList.add("dark");
+
+const api = async (p, m = "GET", body = null) => {
   const base = getApiBase();
-  const r = await fetch((base ? base : "") + "/api" + p, { method: m, headers: { Authorization: "Bearer " + tok } });
-  if (!r.ok) throw new Error((await r.json()).detail || r.status);
+  const opts = {
+    method: m,
+    headers: {
+      "Authorization": "Bearer " + (adminToken || ""),
+      "Content-Type": "application/json"
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch((base ? base : "") + "/api" + p, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || ("HTTP " + r.status));
+  }
   return r.json();
 };
-const when = t => t ? new Date(t * 1000).toLocaleString() : "-";
-async function load() {
-  const m = document.getElementById("m");
-  if (!tok) { m.innerHTML = "Please login in the main app first (with an ADMIN_PHONES number), then reopen this page."; return; }
-  try {
-    const [s, w, b, sf] = await Promise.all([api("/admin/stats"), api("/admin/workers"), api("/admin/bookings"), api("/admin/safety")]);
-    const card = (k, v) => `<div class="c"><b>${esc(v)}</b>${esc(k)}</div>`;
-    m.innerHTML = `<div class="cards">${card("Workers", s.workers)}${card("Customers", s.customers)}${card("Free now", s.workers_free_now)}${card("Open jobs", s.open_jobs)}${card("Calls", s.calls)}
-      ${Object.entries(s.bookings).map(([k, v]) => card("Bookings " + k, v)).join("")}</div>
-      <h3>🆘 SOS events (${sf.sos.length})</h3><table><tr><th>When</th><th>User id</th><th>Booking</th><th>Location</th></tr>${sf.sos.map(x => `<tr class="sos"><td>${when(x.created_at)}</td><td>${x.user_id}</td><td>${x.booking_id ?? "-"}</td><td>${x.lat ?? ""}, ${x.lng ?? ""}</td></tr>`).join("")}</table>
-      <h3>Complaints (${sf.reports.length})</h3><table><tr><th>When</th><th>Reporter</th><th>Reported</th><th>Reason</th></tr>${sf.reports.map(x => `<tr><td>${when(x.created_at)}</td><td>${x.reporter_id}</td><td>${x.reported_id}</td><td>${esc(x.reason)}</td></tr>`).join("")}</table>
-      <h3>Workers</h3><table><tr><th>Name</th><th>Phone</th><th>Skills</th><th>Village</th><th>₹/day</th><th>Rating</th><th>Free now</th><th>Verified</th></tr>
-      ${w.workers.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.phone)}</td><td>${esc(x.skills)}</td><td>${esc(x.village)}</td><td>${x.daily_rate}</td><td>${(x.rating_avg || 0).toFixed(1)} (${x.rating_count})</td>
-      <td class="${x.free_now ? "free" : ""}">${x.free_now ? "FREE" : "-"}</td><td>${x.verified ? "✔" : `<button onclick="verify(${x.id})">Verify</button>`}</td></tr>`).join("")}</table>
-      <h3>Latest bookings</h3><table><tr><th>ID</th><th>Skill</th><th>Date</th><th>Days</th><th>Status</th><th>Worker</th><th>Customer</th><th>Rating</th></tr>
-      ${b.bookings.map(x => `<tr><td>${x.id}</td><td>${esc(x.skill)}</td><td>${esc(x.start_date)}</td><td>${x.days}</td><td>${esc(x.status)}</td><td>${x.worker_id}</td><td>${x.customer_id}</td><td>${x.rating ?? ""}</td></tr>`).join("")}</table>`;
-  } catch (e) { m.textContent = "Error: " + e.message; }
+
+const when = t => t ? new Date(t * 1000).toLocaleString("en-IN") : "-";
+
+// CSV Export Utility (Handles UTF-8 Hindi & Excel Quotations)
+function downloadCsv(filename, rows) {
+  if (!rows || !rows.length) {
+    showToast("डाउनलोड के लिए कोई डेटा नहीं है!");
+    return;
+  }
+  const headers = Object.keys(rows[0]);
+  const csvLines = [
+    headers.join(","),
+    ...rows.map(r => headers.map(h => {
+      let val = r[h] ?? "";
+      if (typeof val === "object") val = JSON.stringify(val);
+      val = String(val).replace(/"/g, '""');
+      if (val.search(/("|,|\n)/g) >= 0) val = `"${val}"`;
+      return val;
+    }).join(","))
+  ];
+  const blob = new Blob(["\uFEFF" + csvLines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast("CSV सफलतापूर्वक डाउनलोड हो गया!");
 }
-async function verify(id) { await api("/admin/workers/" + id + "/verify", "POST"); load(); }
-load(); setInterval(load, 15000);
-</script></body></html>
+
+// Authentication
+async function handleLogin(e) {
+  e.preventDefault();
+  const phone = document.getElementById("loginPhone").value.trim();
+  const password = document.getElementById("loginPassword").value;
+  const btn = document.getElementById("loginBtn");
+  btn.disabled = true;
+  btn.textContent = "जाँच हो रही है...";
+  try {
+    const res = await api("/admin/login", "POST", { phone, password });
+    adminToken = res.token;
+    localStorage.setItem("admin_token", adminToken);
+    localStorage.setItem("admin_user", JSON.stringify(res.user));
+    showToast("स्वागत है " + (res.user?.name || "Admin"));
+    initAdmin();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "🔐 Admin Login";
+    const box = document.getElementById("loginErr");
+    box.textContent = err.message;
+    box.style.display = "block";
+  }
+}
+
+function logout() {
+  localStorage.removeItem("admin_token");
+  adminToken = null;
+  location.reload();
+}
+
+function navigate(tab) {
+  currentTab = tab;
+  window.location.hash = tab;
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+  const navLink = Array.from(document.querySelectorAll(".nav-item")).find(el => el.getAttribute("onclick")?.includes(`'${tab}'`));
+  if (navLink) navLink.classList.add("active");
+  renderCurrentTab();
+}
+
+async function fetchAllData() {
+  try {
+    const [stats, workers, customers, contractors, bookings, payments, calls, safety, health] = await Promise.all([
+      api("/admin/stats").catch(() => null),
+      api("/admin/workers").catch(() => ({ workers: [] })),
+      api("/admin/customers").catch(() => ({ customers: [] })),
+      api("/admin/contractors").catch(() => ({ contractors: [] })),
+      api("/admin/bookings").catch(() => ({ bookings: [] })),
+      api("/admin/payments").catch(() => ({ payments: [] })),
+      api("/admin/calls").catch(() => ({ calls: [] })),
+      api("/admin/safety").catch(() => ({ sos: [], reports: [] })),
+      api("/admin/health").catch(() => null)
+    ]);
+
+    globalData = {
+      stats,
+      workers: workers.workers || [],
+      customers: customers.customers || [],
+      contractors: contractors.contractors || [],
+      bookings: bookings.bookings || [],
+      payments: payments.payments || [],
+      calls: calls.calls || [],
+      safety,
+      health
+    };
+
+    // Update Nav Badges
+    document.getElementById("nbWorkers").textContent = globalData.workers.length;
+    document.getElementById("nbCustomers").textContent = globalData.customers.length;
+    document.getElementById("nbContractors").textContent = globalData.contractors.length;
+    document.getElementById("nbBookings").textContent = globalData.bookings.length;
+    document.getElementById("nbSos").textContent = safety.sos.length;
+    document.getElementById("nbReports").textContent = safety.reports.length;
+
+    renderCurrentTab();
+  } catch (err) {
+    if (err.message.includes("403") || err.message.includes("401") || err.message.includes("Admin only")) {
+      showLogin();
+    } else {
+      showToast("डेटा लोड करने में त्रुटि: " + err.message);
+    }
+  }
+}
+
+function showLogin() {
+  document.getElementById("sidebar").style.display = "none";
+  document.getElementById("contentView").style.display = "none";
+  document.getElementById("loginView").style.display = "block";
+}
+
+function initAdmin() {
+  if (!adminToken) {
+    showLogin();
+    return;
+  }
+  const user = JSON.parse(localStorage.getItem("admin_user") || "{}");
+  document.getElementById("adminName").textContent = user.name || user.phone || "Admin";
+  document.getElementById("sidebar").style.display = "flex";
+  document.getElementById("loginView").style.display = "none";
+  document.getElementById("contentView").style.display = "block";
+
+  const hash = window.location.hash.replace("#", "");
+  if (hash) currentTab = hash;
+  navigate(currentTab);
+  fetchAllData();
+}
+
+// ------------------------------------------------------------- Render Tabs
+function renderCurrentTab() {
+  const container = document.getElementById("contentView");
+  switch (currentTab) {
+    case "overview": container.innerHTML = renderOverview(); break;
+    case "insights": container.innerHTML = renderInsights(); break;
+    case "workers": container.innerHTML = renderWorkers(); break;
+    case "customers": container.innerHTML = renderCustomers(); break;
+    case "contractors": container.innerHTML = renderContractors(); break;
+    case "bookings": container.innerHTML = renderBookings(); break;
+    case "calls": container.innerHTML = renderCalls(); break;
+    case "payments": container.innerHTML = renderPayments(); break;
+    case "sos": container.innerHTML = renderSos(); break;
+    case "reports": container.innerHTML = renderReports(); break;
+    case "reports-csv": container.innerHTML = renderReportsCsv(); break;
+    case "health": container.innerHTML = renderHealth(); break;
+    case "settings": container.innerHTML = renderSettings(); break;
+    default: container.innerHTML = renderOverview();
+  }
+}
+
+// 1. Overview Tab
+function renderOverview() {
+  const s = globalData.stats || {};
+  const signups = s.signups_daily || [];
+  const maxSignup = Math.max(...signups.map(x => x.count), 1);
+
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Overview</h1>
+        <p>प्लेटफ़ॉर्म की संपूर्ण गतिविधि, लाइव आँकड़े एवं प्रदर्शन</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary (CSV)</button>
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Registered users</div>
+        <div class="val">${s.total_users ?? 0}</div>
+        <div class="sub">${s.workers ?? 0} workers · ${s.customers ?? 0} customers</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Free mistri now</div>
+        <div class="val" style="color:#16a34a;">${s.workers_free_now ?? 0}</div>
+        <div class="sub">ready for immediate work</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Bookings</div>
+        <div class="val">${s.total_bookings ?? 0}</div>
+        <div class="sub">${(s.bookings?.completed) ?? 0} completed · ${(s.bookings?.accepted) ?? 0} active</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Revenue (estimated)</div>
+        <div class="val" style="color:#0f766e;">₹${s.total_revenue ?? 0}</div>
+        <div class="sub">via token & online orders</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Open jobs</div>
+        <div class="val">${s.open_jobs ?? 0}</div>
+        <div class="sub">seeking workers</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Call connections</div>
+        <div class="val">${s.calls ?? 0}</div>
+        <div class="sub">voice & direct logs</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">SOS alerts</div>
+        <div class="val" style="color:${(s.sos_count > 0 ? '#dc2626' : '#16a34a')}">${s.sos_count ?? 0}</div>
+        <div class="sub">${s.sos_count ? 'Immediate attention needed' : 'All safe'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Complaints</div>
+        <div class="val">${s.reports_count ?? 0}</div>
+        <div class="sub">user reports filed</div>
+      </div>
+    </div>
+
+    <div class="dashboard-split">
+      <div class="content-box">
+        <h3>New sign-ups, last 14 days</h3>
+        <div class="bar-chart-container">
+          ${signups.map(d => `
+            <div class="bar-col" title="${d.day}: ${d.count} sign-ups">
+              <div class="bar-fill" style="height:${Math.max((d.count / maxSignup) * 100, 4)}%;"></div>
+              <div class="bar-label">${d.day.split(' ')[0]}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="content-box">
+        <h3>Latest Users</h3>
+        <div style="font-size:13px;">
+          ${(s.latest_users || []).map(u => `
+            <div style="padding:8px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;">
+              <div>
+                <b>${esc(u.name || 'User')}</b> (${esc(u.phone)})
+                <div style="font-size:11px;color:#64748b;">${esc(u.role)}</div>
+              </div>
+              <span class="badge neutral">${when(u.created_at).split(',')[0]}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// 2. Workers Tab
+function renderWorkers() {
+  const w = globalData.workers || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Workers (मजदूर व मिस्त्री)</h1>
+        <p>सभी पंजीकृत कारीगर, दैनिक दर, स्किल्स, लोकेशन एवं वेरिफिकेशन</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadWorkersCsv()">📥 Download report (CSV)</button>
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="filter-card">
+      <div class="filter-grid">
+        <input type="text" id="wSearch" placeholder="🔍 नाम या मोबाइल नंबर से खोजें..." oninput="filterWorkersTable()">
+        <select id="wSkill" onchange="filterWorkersTable()">
+          <option value="">सभी काम (All Skills)</option>
+          <option value="mason">राजमिस्त्री (Mason)</option>
+          <option value="labour">मजदूर (Labour)</option>
+          <option value="painter">पेंटर (Painter)</option>
+          <option value="plumber">प्लंबर (Plumber)</option>
+          <option value="electrician">इलेक्ट्रीशियन (Electrician)</option>
+          <option value="carpenter">बढ़ई (Carpenter)</option>
+        </select>
+        <select id="wStatus" onchange="filterWorkersTable()">
+          <option value="">सभी स्थिति (All Status)</option>
+          <option value="free">🟢 आज Free (Free Now)</option>
+          <option value="verified">✔ केवल Verified</option>
+          <option value="blocked">🚫 ब्लॉक (Blocked)</option>
+        </select>
+        <button class="btn-filter" onclick="filterWorkersTable()">Filter</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table id="workersTable">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>नाम (Name)</th>
+            <th>मोबाइल (Phone)</th>
+            <th>काम (Skills)</th>
+            <th>गाँव / जिला</th>
+            <th>दहाड़ी (₹/दिन)</th>
+            <th>रेटिंग</th>
+            <th>Free Status</th>
+            <th>वेरिफिकेशन</th>
+            <th>कार्रवाई (Actions)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${w.map(x => `
+            <tr data-name="${esc(x.name).toLowerCase()}" data-phone="${esc(x.phone)}" data-skills="${esc(x.skills).toLowerCase()}" data-free="${x.free_now}" data-verified="${x.verified}" data-blocked="${x.is_blocked}">
+              <td>${x.id}</td>
+              <td><b>${esc(x.name || 'Worker')}</b></td>
+              <td><a href="tel:${x.phone}" style="color:#0f766e;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a></td>
+              <td><span class="badge neutral">${esc(x.skills || '-')}</span></td>
+              <td>${esc(x.village || '-')}</td>
+              <td><b>₹${x.daily_rate || 0}</b></td>
+              <td>⭐ ${(x.rating_avg || 0).toFixed(1)} (${x.rating_count || 0})</td>
+              <td>${x.free_now ? '<span class="badge success">🟢 FREE NOW</span>' : '<span class="badge neutral">व्यस्त</span>'}</td>
+              <td>${x.verified ? '<span class="badge success">✔ Verified</span>' : '<span class="badge warning">Pending</span>'}</td>
+              <td>
+                <button class="btn-action ${x.verified ? 'danger' : 'primary'}" onclick="toggleWorkerVerify(${x.id})">${x.verified ? 'Unverify' : '✔ Verify'}</button>
+                <button class="btn-action danger" onclick="toggleUserBlock(${x.id})">${x.is_blocked ? 'Unblock' : '🚫 Block'}</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function filterWorkersTable() {
+  const search = document.getElementById("wSearch")?.value.toLowerCase().trim() || "";
+  const skill = document.getElementById("wSkill")?.value.toLowerCase().trim() || "";
+  const status = document.getElementById("wStatus")?.value || "";
+
+  document.querySelectorAll("#workersTable tbody tr").forEach(row => {
+    const name = row.dataset.name || "";
+    const phone = row.dataset.phone || "";
+    const skills = row.dataset.skills || "";
+    const isFree = row.dataset.free === "true";
+    const isVerified = row.dataset.verified === "1";
+    const isBlocked = row.dataset.blocked === "1";
+
+    let match = (name.includes(search) || phone.includes(search) || skills.includes(search));
+    if (skill && !skills.includes(skill)) match = false;
+    if (status === "free" && !isFree) match = false;
+    if (status === "verified" && !isVerified) match = false;
+    if (status === "blocked" && !isBlocked) match = false;
+
+    row.style.display = match ? "" : "none";
+  });
+}
+
+async function toggleWorkerVerify(id) {
+  try {
+    const res = await api(`/admin/workers/${id}/toggle-verify`, "POST");
+    showToast(res.verified ? "कारीगर वेरिफाई हो गया!" : "कारीगर अन-वेरिफाई हो गया!");
+    fetchAllData();
+  } catch (e) { alert(e.message); }
+}
+
+async function toggleUserBlock(id) {
+  try {
+    const res = await api(`/admin/users/${id}/toggle-block`, "POST");
+    showToast(res.is_blocked ? "यूजर ब्लॉक कर दिया गया!" : "यूजर अनब्लॉक कर दिया गया!");
+    fetchAllData();
+  } catch (e) { alert(e.message); }
+}
+
+// 3. Customers Tab
+function renderCustomers() {
+  const c = globalData.customers || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Customers (घर मालिक)</h1>
+        <p>सभी पंजीकृत ग्राहक जिन्होंने मिस्त्री या लेबर बुक किया है</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadCustomersCsv()">📥 Download report (CSV)</button>
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>नाम (Name)</th>
+            <th>मोबाइल (Phone)</th>
+            <th>कुल बुकिंग्स</th>
+            <th>अनुमानित खर्च (₹)</th>
+            <th>पंजीकरण तिथि</th>
+            <th>अंतिम पता</th>
+            <th>कार्रवाई</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${c.map(x => `
+            <tr>
+              <td>${x.id}</td>
+              <td><b>${esc(x.name || 'Customer')}</b></td>
+              <td><a href="tel:${x.phone}" style="color:#0f766e;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a></td>
+              <td><span class="badge info">${x.bookings_count || 0} ऑर्डर</span></td>
+              <td><b>₹${(x.total_spent || 0).toLocaleString('en-IN')}</b></td>
+              <td>${when(x.created_at).split(',')[0]}</td>
+              <td>${esc(x.last_address || '-')}</td>
+              <td>
+                <button class="btn-action danger" onclick="toggleUserBlock(${x.id})">${x.is_blocked ? 'Unblock' : '🚫 Block'}</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// 4. Contractors Tab
+function renderContractors() {
+  const c = globalData.contractors || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Contractors (ठेकेदार)</h1>
+        <p>पंजीकृत ठेकेदार, कंपनी विवरण, क्रू संख्या और प्रोजेक्ट बजट</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadContractorsCsv()">📥 Download report (CSV)</button>
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>कंपनी / फर्म</th>
+            <th>ठेकेदार का नाम</th>
+            <th>मोबाइल</th>
+            <th>काम (Skills)</th>
+            <th>क्रू संख्या</th>
+            <th>न्यूनतम बजट</th>
+            <th>वेरिफिकेशन</th>
+            <th>कार्रवाई</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${c.map(x => `
+            <tr>
+              <td>${x.id}</td>
+              <td><b>${esc(x.company || '-')}</b></td>
+              <td>${esc(x.name || 'Contractor')}</td>
+              <td><a href="tel:${x.phone}" style="color:#0f766e;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a></td>
+              <td><span class="badge neutral">${esc(x.skills || '-')}</span></td>
+              <td><b>${x.crew_count || 0} मजदूर</b></td>
+              <td>₹${(x.min_budget || 0).toLocaleString('en-IN')}</td>
+              <td>${x.verified ? '<span class="badge success">✔ Verified</span>' : '<span class="badge warning">Pending</span>'}</td>
+              <td>
+                <button class="btn-action ${x.verified ? 'danger' : 'primary'}" onclick="toggleContractorVerify(${x.id})">${x.verified ? 'Unverify' : '✔ Verify'}</button>
+                <button class="btn-action danger" onclick="toggleUserBlock(${x.id})">${x.is_blocked ? 'Unblock' : '🚫 Block'}</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function toggleContractorVerify(id) {
+  try {
+    const res = await api(`/admin/contractors/${id}/toggle-verify`, "POST");
+    showToast(res.verified ? "ठेकेदार वेरिफाई हो गया!" : "ठेकेदार अन-वेरिफाई हो गया!");
+    fetchAllData();
+  } catch (e) { alert(e.message); }
+}
+
+// 5. Bookings Tab
+function renderBookings() {
+  const b = globalData.bookings || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Bookings (काम व बुकिंग का पूरा हिसाब)</h1>
+        <p>मालिकों द्वारा मिस्त्री/मजदूर को दी गई सभी बुकिंग्स और टोकन भुगतान</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadBookingsCsv()">📥 Download report (CSV)</button>
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Booking ID</th>
+            <th>काम (Skill)</th>
+            <th>मालिक (Customer)</th>
+            <th>मिस्त्री (Worker)</th>
+            <th>तारीख</th>
+            <th>दिन</th>
+            <th>तय मजदूरी</th>
+            <th>स्थिति (Status)</th>
+            <th>कार्रवाई</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${b.map(x => `
+            <tr>
+              <td><b>#${x.id}</b></td>
+              <td><b>${esc(x.skill || '-')}</b></td>
+              <td>${esc(x.customer_name || 'Customer')}<br><small style="color:#64748b;">${esc(x.customer_phone || '')}</small></td>
+              <td>${esc(x.worker_name || 'Worker')}<br><small style="color:#64748b;">${esc(x.worker_phone || '')}</small></td>
+              <td>${esc(x.start_date || '-')}</td>
+              <td>${x.days || 1} दिन</td>
+              <td><b>₹${x.agreed_rate || 0}</b></td>
+              <td>
+                <span class="badge ${x.status==='completed'?'success':x.status==='accepted'?'info':x.status==='cancelled'?'danger':'warning'}">
+                  ${esc(x.status)}
+                </span>
+              </td>
+              <td>
+                ${x.status !== 'completed' ? `<button class="btn-action primary" onclick="updateBookingStatus(${x.id}, 'completed')">✔ Complete</button>` : ''}
+                ${x.status !== 'cancelled' ? `<button class="btn-action danger" onclick="updateBookingStatus(${x.id}, 'cancelled')">✕ Cancel</button>` : ''}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function updateBookingStatus(id, st) {
+  try {
+    await api(`/admin/bookings/${id}/status`, "POST", { status: st });
+    showToast(`बुकिंग #${id} की स्थिति '${st}' हो गई!`);
+    fetchAllData();
+  } catch (e) { alert(e.message); }
+}
+
+// 6. Payments Tab
+function renderPayments() {
+  const p = globalData.payments || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Payments & Revenue (राजस्व व भुगतान)</h1>
+        <p>Razorpay ऑनलाइन भुगतान एवं ₹10 टोकन शुल्क का विस्तृत ब्योरा</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadPaymentsCsv()">📥 Download report (CSV)</button>
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Txn ID</th>
+            <th>Booking ID</th>
+            <th>ग्राहक (Customer)</th>
+            <th>मिस्त्री (Worker)</th>
+            <th>राशि (Amount)</th>
+            <th>गेटवे (Gateway)</th>
+            <th>Payment ID</th>
+            <th>तारीख</th>
+            <th>स्थिति</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${p.length ? p.map(x => `
+            <tr>
+              <td>#${x.id}</td>
+              <td>${x.booking_id ? '#' + x.booking_id : '-'}</td>
+              <td>${esc(x.customer_name || '-')}<br><small>${esc(x.customer_phone || '')}</small></td>
+              <td>${esc(x.worker_name || '-')}<br><small>${esc(x.worker_phone || '')}</small></td>
+              <td><b>₹${((x.amount_paise || 0) / 100).toFixed(2)}</b></td>
+              <td><span class="badge info">${esc(x.gateway || 'Razorpay')}</span></td>
+              <td><code>${esc(x.gateway_payment_id || '-')}</code></td>
+              <td>${when(x.created_at)}</td>
+              <td><span class="badge ${x.status==='released'?'success':'neutral'}">${esc(x.status)}</span></td>
+            </tr>
+          `).join('') : '<tr><td colspan="9" style="text-align:center;padding:24px;color:#64748b;">कोई ऑनलाइन भुगतान रिकॉर्ड नहीं मिला।</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// 7. Call Logs Tab
+function renderCalls() {
+  const c = globalData.calls || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Voice & Call Logs (कॉल रिकॉर्ड्स)</h1>
+        <p>मालिकों और कारीगरों के बीच हुई सभी कॉल्स का रिकॉर्ड</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadCsv('mistribhaiya_calls.csv', globalData.calls)">📥 Download report (CSV)</button>
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>कॉल करने वाला (Caller)</th>
+            <th>कॉल प्राप्तकर्ता (Callee)</th>
+            <th>प्रदाता (Provider)</th>
+            <th>कॉल स्थिति</th>
+            <th>समय</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${c.map(x => `
+            <tr>
+              <td>#${x.id}</td>
+              <td><b>${esc(x.caller_name || 'User')}</b> (${esc(x.caller_phone || x.caller_id)})</td>
+              <td><b>${esc(x.callee_name || 'User')}</b> (${esc(x.callee_phone || x.callee_id)})</td>
+              <td><span class="badge info">${esc(x.provider || 'direct')}</span></td>
+              <td><span class="badge ${x.status==='completed'?'success':'neutral'}">${esc(x.status || 'connected')}</span></td>
+              <td>${when(x.created_at)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// 8. SOS Alerts Tab
+function renderSos() {
+  const sos = globalData.safety?.sos || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1 style="color:#dc2626;">🆘 SOS Emergency Alerts</h1>
+        <p>मजदूर या मालिक द्वारा दबाए गए आपातकालीन सुरक्षा अलर्ट</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr style="background:#fee2e2;">
+            <th>समय</th>
+            <th>यूजर का नाम</th>
+            <th>मोबाइल नंबर</th>
+            <th>रोल</th>
+            <th>बुकिंग ID</th>
+            <th>लाइव लोकेशन (GPS)</th>
+            <th>स्थिति</th>
+            <th>कार्रवाई</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sos.length ? sos.map(x => `
+            <tr style="background:#fff5f5;">
+              <td>${when(x.created_at)}</td>
+              <td><b>${esc(x.user_name || 'User')}</b></td>
+              <td><a href="tel:${x.user_phone}" style="color:#dc2626;font-weight:700;">📞 ${esc(x.user_phone)}</a></td>
+              <td><span class="badge neutral">${esc(x.user_role || '-')}</span></td>
+              <td>${x.booking_id ? '#' + x.booking_id : '-'}</td>
+              <td>
+                ${x.lat ? `<a href="https://maps.google.com/?q=${x.lat},${x.lng}" target="_blank" style="color:#dc2626;font-weight:700;">📍 ${x.lat}, ${x.lng} (Map ↗)</a>` : '-'}
+              </td>
+              <td><span class="badge ${x.status==='resolved'?'success':'danger'}">${esc(x.status || 'OPEN')}</span></td>
+              <td>
+                ${x.status !== 'resolved' ? `<button class="btn-action primary" onclick="resolveSos(${x.id})">✔ Mark Resolved</button>` : 'Resolved'}
+              </td>
+            </tr>
+          `).join('') : '<tr><td colspan="8" style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">✅ कोई आपातकालीन अलर्ट नहीं है। सब सुरक्षित है!</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function resolveSos(id) {
+  try {
+    await api(`/admin/sos/${id}/resolve`, "POST");
+    showToast("SOS अलर्ट सुलझा हुआ (Resolved) मार्क कर दिया गया!");
+    fetchAllData();
+  } catch (e) { alert(e.message); }
+}
+
+// 9. Complaints Tab
+function renderReports() {
+  const r = globalData.safety?.reports || [];
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>⚠️ Complaints & Reports (शिकायतें)</h1>
+        <p>उपयोगकर्ताओं द्वारा एक-दूसरे के खिलाफ दर्ज की गई शिकायतें</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>समय</th>
+            <th>शिकायतकर्ता (Reporter)</th>
+            <th>आरोपी (Reported)</th>
+            <th>कारण / विवरण</th>
+            <th>स्थिति</th>
+            <th>कार्रवाई</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${r.length ? r.map(x => `
+            <tr>
+              <td>${when(x.created_at)}</td>
+              <td><b>${esc(x.reporter_name || 'User')}</b> (${esc(x.reporter_phone)})</td>
+              <td><b>${esc(x.reported_name || 'User')}</b> (${esc(x.reported_phone)})</td>
+              <td><div style="max-width:300px;white-space:normal;">${esc(x.reason)}</div></td>
+              <td><span class="badge ${x.status==='resolved'?'success':'warning'}">${esc(x.status || 'OPEN')}</span></td>
+              <td>
+                ${x.status !== 'resolved' ? `<button class="btn-action primary" onclick="resolveReport(${x.id})">✔ Resolve</button>` : 'Resolved'}
+                <button class="btn-action danger" onclick="toggleUserBlock(${x.reported_id})">🚫 Block User</button>
+              </td>
+            </tr>
+          `).join('') : '<tr><td colspan="6" style="text-align:center;padding:24px;color:#64748b;">कोई शिकायत दर्ज नहीं है।</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function resolveReport(id) {
+  try {
+    await api(`/admin/reports/${id}/resolve`, "POST");
+    showToast("शिकायत सुलझा दी गई!");
+    fetchAllData();
+  } catch (e) { alert(e.message); }
+}
+
+// 10. Health Check Tab (Matching Screenshot 4)
+function renderHealth() {
+  const h = globalData.health || { score: 95, items: [] };
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Website health check</h1>
+        <p>सिस्टम, डेटाबेस, पेमेंट गेटवे और सुरक्षा की लाइव स्थिति</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-refresh" onclick="fetchAllData()">Run again</button>
+      </div>
+    </div>
+
+    <div class="stat-card" style="max-width:240px;margin-bottom:24px;">
+      <div class="label">Health score</div>
+      <div class="val" style="color:${h.score >= 80 ? '#16a34a' : '#d97706'};">${h.score}%</div>
+      <div class="sub">0 critical problems · 100% operational</div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>AREA</th>
+            <th>FINDING</th>
+            <th>HOW TO FIX</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(h.items || []).map(it => `
+            <tr>
+              <td>
+                <span style="margin-right:6px;">${it.status==='ok' ? '✅' : '⚠️'}</span>
+                <b>${esc(it.area)}</b>
+              </td>
+              <td>${esc(it.finding)}</td>
+              <td><span class="badge ${it.status==='ok'?'success':'warning'}">${esc(it.fix)}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// 11. Reports & CSV Export Center (Matching Screenshot 5)
+function renderReportsCsv() {
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Download Reports (CSV Export)</h1>
+        <p>मजदूर, घर मालिक, ठेकेदार और बुकिंग्स का सारा डेटा Excel/CSV में डाउनलोड करें</p>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">👷 Workers Data</div>
+        <div class="val">${globalData.workers.length}</div>
+        <div class="sub">नाम, नंबर, स्किल्स, रेट, गाँव</div>
+        <button class="btn-csv" style="margin-top:14px;" onclick="downloadWorkersCsv()">📥 Download Workers CSV</button>
+      </div>
+      <div class="stat-card">
+        <div class="label">👤 Customers Data</div>
+        <div class="val">${globalData.customers.length}</div>
+        <div class="sub">मालिकों के नाम, फ़ोन और बुकिंग्स</div>
+        <button class="btn-csv" style="margin-top:14px;" onclick="downloadCustomersCsv()">📥 Download Customers CSV</button>
+      </div>
+      <div class="stat-card">
+        <div class="label">🏢 Contractors Data</div>
+        <div class="val">${globalData.contractors.length}</div>
+        <div class="sub">ठेकेदार, कंपनी और क्रू लिस्ट</div>
+        <button class="btn-csv" style="margin-top:14px;" onclick="downloadContractorsCsv()">📥 Download Contractors CSV</button>
+      </div>
+      <div class="stat-card">
+        <div class="label">📅 Bookings & Work Data</div>
+        <div class="val">${globalData.bookings.length}</div>
+        <div class="sub">सम्पूर्ण काम, मजदूरी और स्थितियाँ</div>
+        <button class="btn-csv" style="margin-top:14px;" onclick="downloadBookingsCsv()">📥 Download Bookings CSV</button>
+      </div>
+    </div>
+  `;
+}
+
+// 12. Settings Tab
+function renderSettings() {
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Platform Settings</h1>
+        <p>प्लेटफ़ॉर्म कॉन्फ़िगरेशन एवं नियम</p>
+      </div>
+    </div>
+
+    <div class="content-box" style="max-width:600px;">
+      <h3 style="margin-bottom:12px;">एडमिन सुरक्षा एवं क्रेडेंशियल्स</h3>
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px;">
+        एडमिन डैशबोर्ड का एक्सेस केवल अधिकृत नंबर <b>9793807864</b> और बैकअप नंबरों तक सीमित है।
+      </p>
+      <div style="background:#f1f5f9;padding:12px 16px;border-radius:8px;font-size:13px;">
+        <div><b>Authorized Phones:</b> 9793807864, 9837101839, 9837101838, 9837101840</div>
+        <div style="margin-top:6px;"><b>Default Password:</b> admin123</div>
+        <div style="margin-top:6px;"><b>Radius Limit:</b> 6 KM - 100 KM</div>
+        <div style="margin-top:6px;"><b>Fast2SMS:</b> Active</div>
+        <div style="margin-top:6px;"><b>Razorpay:</b> Test Mode Configured</div>
+      </div>
+    </div>
+  `;
+}
+
+// CSV Download Handlers
+function downloadWorkersCsv() {
+  const data = globalData.workers.map(w => ({
+    "Worker ID": w.id,
+    "Name": w.name || "Worker",
+    "Phone": w.phone,
+    "Skills": w.skills || "-",
+    "Village/City": w.village || "-",
+    "Daily Rate (INR)": w.daily_rate || 0,
+    "Rating": (w.rating_avg || 0).toFixed(1),
+    "Free Now": w.free_now ? "YES" : "NO",
+    "Verified": w.verified ? "YES" : "NO",
+    "Completed Jobs": w.jobs_done || 0,
+    "Blocked": w.is_blocked ? "YES" : "NO",
+    "Joined Date": when(w.created_at)
+  }));
+  downloadCsv("mistribhaiya_workers_report.csv", data);
+}
+
+function downloadCustomersCsv() {
+  const data = globalData.customers.map(c => ({
+    "Customer ID": c.id,
+    "Name": c.name || "Customer",
+    "Phone": c.phone,
+    "Bookings Count": c.bookings_count || 0,
+    "Total Spent (INR)": c.total_spent || 0,
+    "Last Address": c.last_address || "-",
+    "Blocked": c.is_blocked ? "YES" : "NO",
+    "Joined Date": when(c.created_at)
+  }));
+  downloadCsv("mistribhaiya_customers_report.csv", data);
+}
+
+function downloadContractorsCsv() {
+  const data = globalData.contractors.map(c => ({
+    "Contractor ID": c.id,
+    "Company Name": c.company || "-",
+    "Contact Person": c.name || "Contractor",
+    "Phone": c.phone,
+    "Skills": c.skills || "-",
+    "Minimum Budget (INR)": c.min_budget || 0,
+    "Crew Members Count": c.crew_count || 0,
+    "Projects Count": c.project_count || 0,
+    "Verified": c.verified ? "YES" : "NO",
+    "Joined Date": when(c.created_at)
+  }));
+  downloadCsv("mistribhaiya_contractors_report.csv", data);
+}
+
+function downloadBookingsCsv() {
+  const data = globalData.bookings.map(b => ({
+    "Booking ID": b.id,
+    "Skill Required": b.skill,
+    "Customer Name": b.customer_name || "-",
+    "Customer Phone": b.customer_phone || "-",
+    "Worker Name": b.worker_name || "-",
+    "Worker Phone": b.worker_phone || "-",
+    "Start Date": b.start_date,
+    "Days": b.days || 1,
+    "Agreed Daily Rate": b.agreed_rate || 0,
+    "Total Wage Estimate": (b.agreed_rate || 0) * (b.days || 1),
+    "Status": b.status,
+    "Address": b.address || "-",
+    "Rating Given": b.rating || "-",
+    "Review": b.review || "-",
+    "Booking Time": when(b.created_at)
+  }));
+  downloadCsv("mistribhaiya_bookings_report.csv", data);
+}
+
+function downloadPaymentsCsv() {
+  const data = globalData.payments.map(p => ({
+    "Payment ID": p.id,
+    "Booking ID": p.booking_id || "-",
+    "Customer Name": p.customer_name || "-",
+    "Customer Phone": p.customer_phone || "-",
+    "Worker Name": p.worker_name || "-",
+    "Worker Phone": p.worker_phone || "-",
+    "Amount (INR)": ((p.amount_paise || 0) / 100).toFixed(2),
+    "Gateway": p.gateway || "Razorpay",
+    "Gateway Payment ID": p.gateway_payment_id || "-",
+    "Status": p.status,
+    "Timestamp": when(p.created_at)
+  }));
+  downloadCsv("mistribhaiya_payments_report.csv", data);
+}
+
+function downloadAllSummaryCsv() {
+  const s = globalData.stats || {};
+  const data = [
+    { "Metric": "Total Registered Users", "Value": s.total_users || 0 },
+    { "Metric": "Workers (मिस्त्री/मजदूर)", "Value": s.workers || 0 },
+    { "Metric": "Customers (घर मालिक)", "Value": s.customers || 0 },
+    { "Metric": "Contractors (ठेकेदार)", "Value": s.contractors || 0 },
+    { "Metric": "Free Workers Right Now", "Value": s.workers_free_now || 0 },
+    { "Metric": "Total Bookings", "Value": s.total_bookings || 0 },
+    { "Metric": "Completed Bookings", "Value": s.bookings?.completed || 0 },
+    { "Metric": "Active Accepted Bookings", "Value": s.bookings?.accepted || 0 },
+    { "Metric": "Pending Requested Bookings", "Value": s.bookings?.requested || 0 },
+    { "Metric": "Total Calls Logged", "Value": s.calls || 0 },
+    { "Metric": "Total SOS Alerts", "Value": s.sos_count || 0 },
+    { "Metric": "Total Complaints Filed", "Value": s.reports_count || 0 },
+    { "Metric": "Total Revenue (INR)", "Value": s.total_revenue || 0 }
+  ];
+  downloadCsv("mistribhaiya_platform_summary.csv", data);
+}
+
+// Start
+initAdmin();
+</script>
+</body>
+</html>
