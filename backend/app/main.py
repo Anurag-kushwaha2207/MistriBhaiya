@@ -210,11 +210,20 @@ def healthz():
 
 @app.get("/api/meta")
 def meta():
+    fee = 10
+    try:
+        with db() as c:
+            row = c.execute("SELECT val FROM app_settings WHERE key='booking_token_fee'").fetchone()
+            if row and row["val"]:
+                fee = int(row["val"])
+    except Exception:
+        pass
     return {"skills": [{"key": k, "hi": v[0], "en": v[1]} for k, v in SKILLS.items()],
             "default_radius_km": config.DEFAULT_RADIUS_KM, "max_radius_km": config.MAX_RADIUS_KM,
             "call_mode": config.CALL_PROVIDER, "ice_servers": ice_servers(),
             "instant_wave_seconds": config.INSTANT_WAVE_SECONDS, "assistant_langs": ["hi", "en", "mr", "gu", "bn", "ta", "te", "bho"],
-            "require_start_otp": config.REQUIRE_START_OTP, "dev_mode": config.DEV_MODE}
+            "require_start_otp": config.REQUIRE_START_OTP, "dev_mode": config.DEV_MODE,
+            "booking_token_fee": fee}
 
 @app.post("/api/auth/request-otp")
 def request_otp(req: OtpReq):
@@ -270,6 +279,8 @@ def login_password(req: LoginPasswordReq, request: Request):
         u = firebase_sync.restore_user_if_missing(phone)
     if not u:
         raise HTTPException(404, "अकाउंट नहीं मिला। कृपया पहले रजिस्टर करें। (Account not found. Please register first.)")
+    if u.get("is_deleted"):
+        raise HTTPException(403, "यह अकाउंट एडमिन द्वारा हटा दिया गया है। (This account has been deleted)")
     if not u["password_hash"]:
         raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
     if not verify_password(req.password, u["password_hash"]):
@@ -1392,6 +1403,7 @@ def admin_workers(u=Depends(current_user)):
                    (SELECT COUNT(*) FROM bookings b WHERE b.worker_id = u.id AND b.status = 'completed') as jobs_done
             FROM users u
             JOIN worker_profiles wp ON wp.user_id = u.id
+            WHERE (u.is_deleted = 0 OR u.is_deleted IS NULL)
             ORDER BY u.created_at DESC LIMIT 500
         """).fetchall()
     now = time.time()
@@ -1416,7 +1428,7 @@ def admin_customers(u=Depends(current_user)):
                    (SELECT address FROM bookings WHERE customer_id = u.id ORDER BY created_at DESC LIMIT 1) as last_address
             FROM users u
             LEFT JOIN bookings b ON b.customer_id = u.id
-            WHERE u.role = 'customer'
+            WHERE u.role = 'customer' AND (u.is_deleted = 0 OR u.is_deleted IS NULL)
             GROUP BY u.id
             ORDER BY u.created_at DESC LIMIT 500
         """).fetchall()
@@ -1433,6 +1445,7 @@ def admin_contractors(u=Depends(current_user)):
                    (SELECT COUNT(*) FROM projects WHERE contractor_id = u.id) as project_count
             FROM users u
             JOIN contractor_profiles cp ON cp.user_id = u.id
+            WHERE (u.is_deleted = 0 OR u.is_deleted IS NULL)
             ORDER BY u.created_at DESC LIMIT 500
         """).fetchall()
     return {"contractors": [dict(r) for r in rows]}
@@ -1461,28 +1474,145 @@ def admin_delete_user(uid: int, u=Depends(current_user)):
         if not row:
             raise HTTPException(404, "User not found")
         phone = row["phone"]
+        now = time.time()
         
-        c.execute("DELETE FROM payments WHERE customer_id=? OR worker_id=?", (uid, uid))
-        c.execute("DELETE FROM bookings WHERE customer_id=? OR worker_id=?", (uid, uid))
-        c.execute("DELETE FROM job_interests WHERE worker_id=?", (uid,))
-        c.execute("DELETE FROM jobs WHERE customer_id=?", (uid,))
-        c.execute("DELETE FROM instant_offers WHERE worker_id=?", (uid,))
-        c.execute("DELETE FROM instant_requests WHERE customer_id=?", (uid,))
-        c.execute("DELETE FROM messages WHERE sender_id=? OR receiver_id=?", (uid, uid))
-        c.execute("DELETE FROM notifications WHERE user_id=?", (uid,))
-        c.execute("DELETE FROM reports WHERE reporter_id=? OR reported_id=?", (uid, uid))
-        c.execute("DELETE FROM sos_events WHERE user_id=?", (uid,))
-        c.execute("DELETE FROM call_logs WHERE from_user_id=? OR to_user_id=?", (uid, uid))
-        c.execute("DELETE FROM crew_members WHERE contractor_id=? OR worker_id=?", (uid, uid))
-        c.execute("DELETE FROM projects WHERE contractor_id=?", (uid,))
+        # Soft-delete the user record so it shows as DELETED in master CSV
+        c.execute("UPDATE users SET is_deleted=1, is_blocked=1, deleted_at=? WHERE id=?", (now, uid))
         c.execute("DELETE FROM worker_profiles WHERE user_id=?", (uid,))
         c.execute("DELETE FROM contractor_profiles WHERE user_id=?", (uid,))
         if phone:
             c.execute("DELETE FROM otps WHERE phone=?", (phone,))
-        c.execute("DELETE FROM users WHERE id=?", (uid,))
 
+    # Completely purge from Firebase Firestore
     firebase_sync.delete_user_from_firebase(uid, phone)
     return {"ok": True, "deleted_user_id": uid, "phone": phone}
+
+# ----------------- ADMIN SETTINGS & TOKEN FEE -----------------
+class AdminSettingsReq(BaseModel):
+    booking_token_fee: int = Field(10, ge=1, le=5000)
+
+@app.get("/api/admin/settings")
+def admin_get_settings(u=Depends(current_user)):
+    need_admin(u)
+    fee = 10
+    with db() as c:
+        row = c.execute("SELECT val FROM app_settings WHERE key='booking_token_fee'").fetchone()
+        if row and row["val"]:
+            try:
+                fee = int(row["val"])
+            except Exception:
+                pass
+    return {"ok": True, "booking_token_fee": fee}
+
+@app.post("/api/admin/settings")
+def admin_save_settings(req: AdminSettingsReq, u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        c.execute("""
+            INSERT INTO app_settings(key, val, updated_at) VALUES('booking_token_fee', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET val=excluded.val, updated_at=excluded.updated_at
+        """, (str(req.booking_token_fee), time.time()))
+    return {"ok": True, "booking_token_fee": req.booking_token_fee}
+
+# ----------------- WORKER PROFILE DETAIL & OFFERS -----------------
+@app.get("/api/admin/workers/{wid}/detail")
+def admin_worker_detail(wid: int, u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        usr = c.execute("SELECT id, name, phone, avatar, is_blocked, is_deleted, created_at FROM users WHERE id=?", (wid,)).fetchone()
+        if not usr:
+            raise HTTPException(404, "Worker not found")
+        wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (wid,)).fetchone()
+        bookings = c.execute("""
+            SELECT b.id, b.skill, b.start_date, b.days, b.agreed_rate, b.status, b.rating, b.review, b.created_at,
+                   cu.name as customer_name, cu.phone as customer_phone
+            FROM bookings b
+            LEFT JOIN users cu ON cu.id = b.customer_id
+            WHERE b.worker_id = ?
+            ORDER BY b.created_at DESC LIMIT 50
+        """, (wid,)).fetchall()
+        payments = c.execute("""
+            SELECT id, amount_paise, status, gateway, gateway_payment_id, created_at
+            FROM payments WHERE worker_id = ? ORDER BY created_at DESC LIMIT 50
+        """, (wid,)).fetchall()
+    return {
+        "user": dict(usr),
+        "profile": dict(wp) if wp else {},
+        "bookings": [dict(b) for b in bookings],
+        "payments": [dict(p) for p in payments]
+    }
+
+class AdminSendOfferReq(BaseModel):
+    skill: str
+    address: str = ""
+    daily_rate: int = 500
+    days: int = 1
+    note: str = ""
+    start_date: str = ""
+
+@app.post("/api/admin/workers/{wid}/send-offer")
+async def admin_send_worker_offer(wid: int, req: AdminSendOfferReq, u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        wp = c.execute("SELECT user_id, daily_rate FROM worker_profiles WHERE user_id=?", (wid,)).fetchone()
+        if not wp:
+            raise HTTPException(404, "Worker not found")
+        start_d = req.start_date or time.strftime("%Y-%m-%d")
+        note_txt = f"[Admin Offer] {req.note or ''}".strip()
+        now = time.time()
+        cur = c.execute("""
+            INSERT INTO bookings(customer_id, worker_id, skill, note, address, start_date, days, agreed_rate, status, offer_by, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?)
+        """, (u["id"], wid, req.skill, note_txt, req.address, start_d, req.days, req.daily_rate, u["id"], now, now))
+        bid = cur.lastrowid
+    firebase_sync.sync_booking(bid)
+    await notify(wid, {"type": "new_booking", "booking_id": bid, "text": f"👑 एडमिन द्वारा नया काम ऑफर आया: ₹{req.daily_rate}/दिन ({req.skill})"})
+    return {"ok": True, "booking_id": bid}
+
+class AdminSendPaymentReq(BaseModel):
+    amount: int
+    note: str = ""
+    utr: str = ""
+
+@app.post("/api/admin/workers/{wid}/send-payment")
+async def admin_send_worker_payment(wid: int, req: AdminSendPaymentReq, u=Depends(current_user)):
+    need_admin(u)
+    now = time.time()
+    amount_paise = req.amount * 100
+    with db() as c:
+        cur = c.execute("""
+            INSERT INTO payments(customer_id, worker_id, booking_id, amount_paise, fee_paise, status, gateway, gateway_payment_id, created_at, updated_at)
+            VALUES(?, ?, NULL, ?, 0, 'released', 'admin_direct', ?, ?, ?)
+        """, (u["id"], wid, amount_paise, req.utr or f"adm_pay_{int(now)}", now, now))
+        pid = cur.lastrowid
+    await notify(wid, {"type": "payment_received", "text": f"💰 एडमिन द्वारा ₹{req.amount} की राशि भेजी गई! ({req.note or 'डायरेक्ट भुगतान'})"})
+    return {"ok": True, "payment_id": pid}
+
+# ----------------- MASTER SUMMARY REPORT (ALL USERS + DELETED) -----------------
+@app.get("/api/admin/users/master-report")
+def admin_master_report(u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        rows = c.execute("""
+            SELECT u.id, u.name, u.phone, u.role, u.created_at,
+                   COALESCE(u.is_blocked, 0) as is_blocked,
+                   COALESCE(u.is_deleted, 0) as is_deleted,
+                   COALESCE(u.deleted_at, 0) as deleted_at,
+                   COALESCE(wp.skills, cp.skills, '') as skills,
+                   COALESCE(wp.village, cp.village, '') as village,
+                   COALESCE(wp.daily_rate, 0) as daily_rate,
+                   COALESCE(cp.min_budget, 0) as min_budget,
+                   COALESCE(wp.rating_avg, cp.rating_avg, 0.0) as rating_avg,
+                   COALESCE(wp.rating_count, 0) as rating_count,
+                   COALESCE(wp.experience_years, cp.experience_years, 0) as exp_years,
+                   (SELECT COUNT(*) FROM bookings b WHERE b.worker_id = u.id OR b.customer_id = u.id) as total_bookings,
+                   (SELECT COALESCE(SUM(p.amount_paise), 0) / 100 FROM payments p WHERE p.worker_id = u.id OR p.customer_id = u.id) as total_amount
+            FROM users u
+            LEFT JOIN worker_profiles wp ON wp.user_id = u.id
+            LEFT JOIN contractor_profiles cp ON cp.user_id = u.id
+            ORDER BY u.id DESC
+        """).fetchall()
+    return {"users": [dict(r) for r in rows]}
 
 @app.get("/api/admin/bookings")
 def admin_bookings(u=Depends(current_user)):

@@ -26,6 +26,7 @@ export default function BookingsView({
 
   const role = user?.role || 'worker';
   const isWorker = role === 'worker';
+  const bookingFee = meta?.booking_token_fee || 10;
 
   const loadBookings = async () => {
     setLoading(true);
@@ -255,12 +256,12 @@ export default function BookingsView({
               )}
             </div>
 
-            {/* OTP display for customer once accepted & ₹10 paid */}
+            {/* OTP display for customer once accepted & token paid */}
             {!isWorker && b.status === 'accepted' && Boolean(b.advance_paid) && Boolean(b.start_otp) && (
               <div style={{ background: '#e8f5e9', border: '1px dashed #2e7d32', borderRadius: '8px', padding: '10px 12px', margin: '10px 0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <b style={{ color: '#2e7d32', fontSize: '15px' }}>🔑 काम शुरू करने का OTP: {b.start_otp}</b>
-                  <span style={{ fontSize: '11px', color: '#1b5e20', background: '#c8e6c9', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>✔ ₹10 टोकन जमा</span>
+                  <span style={{ fontSize: '11px', color: '#1b5e20', background: '#c8e6c9', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>✔ ₹{bookingFee} टोकन जमा</span>
                 </div>
                 <div className="sub" style={{ fontSize: '11px', marginTop: '3px' }}>
                   मिस्त्री को काम शुरू करते समय यह 4-अंकों का OTP बताएं। (बाकी मजदूरी सीधे मिस्त्री को नकद दें)।
@@ -268,7 +269,7 @@ export default function BookingsView({
               </div>
             )}
 
-            {/* Locked OTP prompt for customer when accepted but NOT yet paid ₹10 */}
+            {/* Locked OTP prompt for customer when accepted but NOT yet paid */}
             {!isWorker && b.status === 'accepted' && !b.advance_paid && !b.started_at && (
               <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: '8px', padding: '12px', margin: '10px 0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -278,7 +279,7 @@ export default function BookingsView({
                       काम शुरू करने का OTP लॉक है
                     </div>
                     <div style={{ fontSize: '12px', color: '#555' }}>
-                      मिस्त्री ने बुकिंग स्वीकार कर ली है। OTP देखने और बुकिंग पक्की करने के लिए ₹10 जमा करें।
+                      मिस्त्री ने बुकिंग स्वीकार कर ली है। OTP देखने और बुकिंग पक्की करने के लिए ₹{bookingFee} जमा करें।
                     </div>
                   </div>
                 </div>
@@ -297,7 +298,7 @@ export default function BookingsView({
                   }}
                   onClick={() => setPayModalBooking(b)}
                 >
-                  💳 ₹10 ऑनलाइन भुगतान करें (OTP अनलॉक करें)
+                  💳 ₹{bookingFee} ऑनलाइन भुगतान करें (OTP अनलॉक करें)
                 </button>
               </div>
             )}
@@ -526,6 +527,7 @@ export default function BookingsView({
           booking={payModalBooking}
           user={user}
           token={token}
+          meta={meta}
           onClose={() => setPayModalBooking(null)}
           onSuccess={() => loadBookings()}
           showToast={showToast}

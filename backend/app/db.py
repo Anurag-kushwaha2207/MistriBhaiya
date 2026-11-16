@@ -1,4 +1,5 @@
 import sqlite3
+import time
 from contextlib import contextmanager
 from . import config
 
@@ -233,10 +234,23 @@ def migrate(c):
         c.commit()
         c.execute("PRAGMA foreign_keys=ON")
 
-    _add_cols(c, "users", [("password_hash", "TEXT DEFAULT ''"), ("avatar", "TEXT DEFAULT ''"), ("is_blocked", "INTEGER DEFAULT 0")])
+    _add_cols(c, "users", [
+        ("password_hash", "TEXT DEFAULT ''"),
+        ("avatar", "TEXT DEFAULT ''"),
+        ("is_blocked", "INTEGER DEFAULT 0"),
+        ("is_deleted", "INTEGER DEFAULT 0"),
+        ("deleted_at", "REAL DEFAULT 0"),
+    ])
     _add_cols(c, "bookings", [("start_otp", "TEXT DEFAULT ''"), ("started_at", "REAL"), ("instant_id", "INTEGER"),
                               ("offer_by", "INTEGER"), ("offer_rounds", "INTEGER DEFAULT 0")])
     _add_cols(c, "job_interests", [("rate", "INTEGER DEFAULT 0")])
+
+    c.execute("""CREATE TABLE IF NOT EXISTS app_settings(
+      key TEXT PRIMARY KEY,
+      val TEXT NOT NULL,
+      updated_at REAL NOT NULL
+    )""")
+    c.execute("INSERT OR IGNORE INTO app_settings(key, val, updated_at) VALUES('booking_token_fee', '10', ?)", (time.time(),))
 
     c.execute("""CREATE TABLE IF NOT EXISTS notifications(
       id INTEGER PRIMARY KEY AUTOINCREMENT,

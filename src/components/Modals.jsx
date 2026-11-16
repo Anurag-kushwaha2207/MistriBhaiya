@@ -439,15 +439,15 @@ export function OfferModal({ offer, token, onClose, onAccept, showToast, t }) {
 }
 
 
-export function PaymentPayModal({ booking, user, token, onClose, onSuccess, showToast, t }) {
+export function PaymentPayModal({ booking, user, token, meta, onClose, onSuccess, showToast, t }) {
   const [method, setMethod] = useState('online');
   const [loading, setLoading] = useState(false);
-  const bookingFee = 10; // Fixed ₹10 booking token amount
+  const bookingFee = meta?.booking_token_fee || 10; // Dynamic booking token amount set by Admin
 
   const handlePay = async () => {
     setLoading(true);
     try {
-      const amountPaise = bookingFee * 100; // 1000 paise = ₹10
+      const amountPaise = bookingFee * 100; // e.g. 1000 paise = ₹10
       const res = await api('/payments/order', 'POST', {
         booking_id: booking.id,
         amount_paise: amountPaise,
@@ -475,7 +475,7 @@ export function PaymentPayModal({ booking, user, token, onClose, onSuccess, show
                 razorpay_payment_id: resp.razorpay_payment_id,
                 razorpay_signature: resp.razorpay_signature
               }, token);
-              showToast('🎉 ₹10 भुगतान सफल! काम शुरू करने का OTP अनलॉक हो गया!');
+              showToast(`🎉 ₹${bookingFee} भुगतान सफल! काम शुरू करने का OTP अनलॉक हो गया!`);
               if (onSuccess) onSuccess();
               onClose();
             } catch (err) {
@@ -495,7 +495,7 @@ export function PaymentPayModal({ booking, user, token, onClose, onSuccess, show
           razorpay_payment_id: 'pay_mock_' + Date.now(),
           razorpay_signature: 'sig_mock'
         }, token);
-        showToast('🎉 ₹10 भुगतान सफल! काम शुरू करने का OTP अनलॉक हो गया!');
+        showToast(`🎉 ₹${bookingFee} भुगतान सफल! काम शुरू करने का OTP अनलॉक हो गया!`);
         if (onSuccess) onSuccess();
         onClose();
       }
@@ -521,7 +521,7 @@ export function PaymentPayModal({ booking, user, token, onClose, onSuccess, show
           </div>
         </div>
         <div style={{ background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: '10px', padding: '12px', margin: '14px 0', fontSize: '12px', lineHeight: '1.6', color: '#2e7d32' }}>
-          ℹ️ <b>यह ₹10 कंपनी खाते में सुरक्षित जमा होंगे।</b> जैसे ही आप यह ₹10 देंगे, मिस्त्री को काम शुरू कराने वाला 4-अंकों का OTP आपको तुरंत स्क्रीन पर दिख जाएगा।
+          ℹ️ <b>यह ₹{bookingFee} टोकन शुल्क सुरक्षित जमा होगा।</b> जैसे ही आप यह ₹{bookingFee} देंगे, मिस्त्री को काम शुरू कराने वाला 4-अंकों का OTP आपको तुरंत स्क्रीन पर दिख जाएगा।
         </div>
         <button className="big" style={{ background: '#2e7d32', width: '100%', padding: '12px', fontSize: '15px' }} onClick={handlePay} disabled={loading}>
           {loading ? 'प्रक्रिया जारी है...' : `💳 ₹${bookingFee} ऑनलाइन भुगतान करें (Razorpay)`}

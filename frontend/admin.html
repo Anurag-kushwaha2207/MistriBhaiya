@@ -314,6 +314,28 @@
       background: #0f172a;
       color: #ffffff;
     }
+    .live-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: #f0fdf4;
+      border: 1.5px solid #bbf7d0;
+      padding: 6px 14px;
+      border-radius: 20px;
+    }
+    .live-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #16a34a;
+      box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+      animation: pulseGreen 1.6s infinite;
+    }
+    @keyframes pulseGreen {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+    }
 
     /* Filter Bar */
     .filter-card {
@@ -618,11 +640,12 @@
       </button>
       <span style="font-size:13px;color:#64748b;font-weight:600;">MistriBhaiya Administration</span>
     </div>
-    <div class="top-right">
-      <button class="btn-sync" onclick="syncFirebaseRealData()">
-        <span>🔄</span> <span>Sync Firebase Real Data</span>
-      </button>
-      <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary CSV</button>
+    <div class="top-right" style="display:flex;align-items:center;gap:12px;">
+      <div class="live-status-pill" title="रियल-टाइम ऑटोमैटिक सिंक सक्रिय है">
+        <span class="live-dot"></span>
+        <span style="font-weight:700;color:#0f766e;font-size:12px;">LIVE REAL-TIME</span>
+      </div>
+      <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary CSV (All Users)</button>
     </div>
   </header>
 
@@ -630,6 +653,9 @@
     <!-- Dynamic Tab Content Injected Here -->
   </main>
 </div>
+
+<!-- Worker Detail, Direct Offer & Payment Modal -->
+<div class="login-overlay" id="workerOfferModal" style="display:none;z-index:9999;align-items:center;justify-content:center;"></div>
 
 <!-- Standalone Admin Login Modal (Appears whenever not logged in) -->
 <div class="login-overlay" id="adminLoginModal" style="display:none;">
@@ -720,32 +746,6 @@ function closeSidebar() {
   sidebar.classList.remove("open");
   backdrop.classList.remove("active");
 }
-
-// Touch swipe gesture listeners
-let touchStartX = 0;
-let touchStartY = 0;
-window.addEventListener("touchstart", e => {
-  touchStartX = e.changedTouches[0].screenX;
-  touchStartY = e.changedTouches[0].screenY;
-}, { passive: true });
-
-window.addEventListener("touchend", e => {
-  const touchEndX = e.changedTouches[0].screenX;
-  const touchEndY = e.changedTouches[0].screenY;
-  const diffX = touchEndX - touchStartX;
-  const diffY = touchEndY - touchStartY;
-
-  // Horizontal swipe priority
-  if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 60) {
-    if (diffX > 0 && touchStartX < 75) {
-      // Swiped right from left edge -> Open Sidebar!
-      openSidebar();
-    } else if (diffX < 0 && sidebar.classList.contains("open")) {
-      // Swiped left -> Close Sidebar!
-      closeSidebar();
-    }
-  }
-}, { passive: true });
 
 // ------------------------------------------------------------- API & Sync Engine
 const api = async (p, m = "GET", body = null) => {
@@ -859,9 +859,11 @@ async function syncFirebaseRealData() {
   }
 }
 
-async function fetchAllData() {
+let adminSettings = { booking_token_fee: 10 };
+
+async function fetchAllData(silent = false) {
   try {
-    const [stats, workers, customers, contractors, bookings, payments, calls, safety, health] = await Promise.all([
+    const [stats, workers, customers, contractors, bookings, payments, calls, safety, health, settings] = await Promise.all([
       api("/admin/stats").catch(() => null),
       api("/admin/workers").catch(() => ({ workers: [] })),
       api("/admin/customers").catch(() => ({ customers: [] })),
@@ -870,7 +872,8 @@ async function fetchAllData() {
       api("/admin/payments").catch(() => ({ payments: [] })),
       api("/admin/calls").catch(() => ({ calls: [] })),
       api("/admin/safety").catch(() => ({ sos: [], reports: [] })),
-      api("/admin/health").catch(() => null)
+      api("/admin/health").catch(() => null),
+      api("/admin/settings").catch(() => ({ booking_token_fee: 10 }))
     ]);
 
     globalData = {
@@ -885,19 +888,34 @@ async function fetchAllData() {
       health
     };
 
-    // Update Nav Badges with Real Numbers
-    document.getElementById("nbWorkers").textContent = globalData.workers.length;
-    document.getElementById("nbCustomers").textContent = globalData.customers.length;
-    document.getElementById("nbContractors").textContent = globalData.contractors.length;
-    document.getElementById("nbBookings").textContent = globalData.bookings.length;
-    document.getElementById("nbSos").textContent = safety.sos.length;
-    document.getElementById("nbReports").textContent = safety.reports.length;
+    if (settings && settings.booking_token_fee != null) {
+      adminSettings.booking_token_fee = settings.booking_token_fee;
+    }
 
-    renderCurrentTab();
+    // Update Nav Badges with Real Numbers
+    const nbW = document.getElementById("nbWorkers");
+    const nbC = document.getElementById("nbCustomers");
+    const nbCon = document.getElementById("nbContractors");
+    const nbB = document.getElementById("nbBookings");
+    const nbS = document.getElementById("nbSos");
+    const nbR = document.getElementById("nbReports");
+
+    if (nbW) nbW.textContent = globalData.workers.length;
+    if (nbC) nbC.textContent = globalData.customers.length;
+    if (nbCon) nbCon.textContent = globalData.contractors.length;
+    if (nbB) nbB.textContent = globalData.bookings.length;
+    if (nbS) nbS.textContent = safety.sos.length;
+    if (nbR) nbR.textContent = safety.reports.length;
+
+    // In silent real-time refresh, don't disrupt active typing
+    const isTyping = document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA" || document.activeElement.tagName === "SELECT");
+    if (!silent || !isTyping) {
+      renderCurrentTab();
+    }
   } catch (err) {
     if (err.message.includes("403") || err.message.includes("401") || err.message.includes("Admin only")) {
       logout();
-    } else {
+    } else if (!silent) {
       showToast("डेटा लोड करने में त्रुटि: " + err.message);
     }
   }
@@ -920,6 +938,14 @@ function initDashboard() {
   if (hash) currentTab = hash;
   navigate(currentTab);
   fetchAllData();
+
+  // Automatic real-time background sync every 3.5 seconds
+  if (window._adminRealtimeTimer) clearInterval(window._adminRealtimeTimer);
+  window._adminRealtimeTimer = setInterval(() => {
+    if (adminToken && !document.hidden) {
+      fetchAllData(true);
+    }
+  }, 3500);
 }
 
 // ------------------------------------------------------------- Views Rendering
@@ -956,8 +982,27 @@ function renderOverview() {
         <p>Firebase और Render से लाइव वास्तविक डेटा एवं गतिविधियाँ</p>
       </div>
       <div class="header-actions">
-        <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary (CSV)</button>
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary CSV (All Users)</button>
+      </div>
+    </div>
+
+    <!-- Booking Token Fee Dynamic Controller -->
+    <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:var(--radius);padding:18px 20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,0.02);">
+      <div>
+        <h3 style="margin:0 0 4px;font-size:15px;color:#166534;font-weight:700;display:flex;align-items:center;gap:8px;">
+          💳 ग्राहक बुकिंग टोकन शुल्क (Customer Booking Token Fee)
+        </h3>
+        <p style="margin:0;font-size:12.5px;color:#4b5563;">
+          जब कोई ग्राहक मिस्त्री को बुक करेगा तो यहाँ सेट किया गया शुल्क जमा करना होगा (जैसे ₹10, ₹20, ₹30 आदि) तभी OTP अनलॉक होगा।
+        </p>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:13px;font-weight:700;color:#374151;">वर्तमान टोकन शुल्क:</span>
+        <div style="display:flex;align-items:center;background:#fff;border:1.5px solid #16a34a;border-radius:8px;padding:2px 10px;">
+          <span style="font-weight:800;color:#16a34a;font-size:16px;">₹</span>
+          <input type="number" id="quickFeeInput" value="${adminSettings.booking_token_fee || 10}" style="width:65px;border:none;background:transparent;font-weight:800;font-size:16px;color:#16a34a;padding:4px 6px;outline:none;" min="1" max="5000">
+        </div>
+        <button class="btn-action primary" onclick="saveBookingFeeFromQuick()" style="padding:8px 16px;font-weight:700;background:#16a34a;">💾 सेव करें</button>
       </div>
     </div>
 
@@ -989,8 +1034,8 @@ function renderOverview() {
       </div>
       <div class="stat-card">
         <div class="label">Total Revenue (₹)</div>
-        <div class="val" style="color:#16a34a;">₹${s.total_revenue ?? (globalData.bookings.length * 10)}</div>
-        <div class="sub">₹10 token fee + online bookings</div>
+        <div class="val" style="color:#16a34a;">₹${s.total_revenue ?? (globalData.bookings.length * (adminSettings.booking_token_fee || 10))}</div>
+        <div class="sub">₹${adminSettings.booking_token_fee || 10} token fee + online bookings</div>
       </div>
       <div class="stat-card">
         <div class="label">SOS alerts</div>
@@ -1018,7 +1063,143 @@ function renderOverview() {
   `;
 }
 
-// 2. Workers Tab
+// 2. Distinct Insights & Deep Analytics Tab
+function renderInsights() {
+  const w = globalData.workers || [];
+  const c = globalData.customers || [];
+  const b = globalData.bookings || [];
+  const p = globalData.payments || [];
+
+  // Skill Distribution
+  const skillCounts = {};
+  w.forEach(worker => {
+    const list = (worker.skills || "").split(",").map(x => x.trim()).filter(Boolean);
+    list.forEach(s => {
+      skillCounts[s] = (skillCounts[s] || 0) + 1;
+    });
+  });
+  const sortedSkills = Object.entries(skillCounts).sort((a, b) => b[1] - a[1]);
+  const maxSkill = Math.max(...Object.values(skillCounts), 1);
+
+  // Geographic breakdown
+  const cityCounts = {};
+  [...w, ...c].forEach(user => {
+    const loc = (user.village || user.last_address || "").trim();
+    if (loc && loc !== "-") {
+      const parts = loc.split(",");
+      const city = parts[parts.length - 1].trim() || loc;
+      cityCounts[city] = (cityCounts[city] || 0) + 1;
+    }
+  });
+  const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+  // Booking Conversion
+  const totalB = b.length || 1;
+  const completedB = b.filter(x => x.status === "completed" || x.status === "work_done").length;
+  const acceptedB = b.filter(x => x.status === "accepted" || x.status === "started").length;
+  const requestedB = b.filter(x => x.status === "requested").length;
+  const cancelledB = b.filter(x => x.status === "cancelled" || x.status === "rejected").length;
+  const completionRate = Math.round((completedB / totalB) * 100);
+
+  // Daily Wage analytics
+  const rates = w.map(x => x.daily_rate).filter(r => r > 0);
+  const avgWage = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 600;
+  const minWage = rates.length ? Math.min(...rates) : 400;
+  const maxWage = rates.length ? Math.max(...rates) : 1200;
+
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Platform Insights & Analytics (गहन विश्लेषण)</h1>
+        <p>कारीगर हुनर, ज़िला-वार विस्तार, बुकिंग पूर्ति दर और मजदूरी ट्रेंड्स</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary CSV (All Users)</button>
+      </div>
+    </div>
+
+    <!-- Insights Highlight Metrics -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Booking Fulfillment Rate</div>
+        <div class="val" style="color:#16a34a;">${completionRate}%</div>
+        <div class="sub">${completedB} out of ${b.length} bookings completed</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Average Daily Wage</div>
+        <div class="val" style="color:#0f766e;">₹${avgWage}</div>
+        <div class="sub">Range: ₹${minWage} - ₹${maxWage} / day</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Top Trade / Skill</div>
+        <div class="val">${sortedSkills[0] ? sortedSkills[0][0] : 'Mason'}</div>
+        <div class="sub">${sortedSkills[0] ? sortedSkills[0][1] : 0} registered workers</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Active Coverage Cities</div>
+        <div class="val">${Object.keys(cityCounts).length || 6}</div>
+        <div class="sub">Districts & regions active</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(420px, 1fr));gap:20px;margin-bottom:24px;">
+      <!-- Skill Breakdown -->
+      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:20px;">
+        <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;color:#0f766e;display:flex;align-items:center;gap:6px;">
+          🔨 हुनर अनुसार कारीगरों की संख्या (Skills Distribution)
+        </h3>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${sortedSkills.length ? sortedSkills.map(([skill, count]) => `
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;margin-bottom:4px;">
+                <span>${esc(skill)}</span>
+                <span style="color:#0f766e;">${count} कारीगर (${Math.round((count / (w.length || 1)) * 100)}%)</span>
+              </div>
+              <div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
+                <div style="height:100%;width:${(count / maxSkill) * 100}%;background:#0f766e;border-radius:4px;"></div>
+              </div>
+            </div>
+          `).join('') : '<p class="sub">कोई डेटा उपलब्ध नहीं</p>'}
+        </div>
+      </div>
+
+      <!-- Booking Funnel -->
+      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:20px;">
+        <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;color:#0f766e;display:flex;align-items:center;gap:6px;">
+          📊 बुकिंग रूपांतरण फनल (Booking Funnel)
+        </h3>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border-left:4px solid #3b82f6;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;">
+              <span>1. Requested (ऑफ़र भेजा गया)</span>
+              <span>${requestedB} (${Math.round((requestedB / totalB) * 100)}%)</span>
+            </div>
+          </div>
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border-left:4px solid #eab308;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;">
+              <span>2. Accepted / In-Progress (स्वीकृत व चालू)</span>
+              <span>${acceptedB} (${Math.round((acceptedB / totalB) * 100)}%)</span>
+            </div>
+          </div>
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border-left:4px solid #16a34a;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;">
+              <span>3. Completed (कार्य सफलतापूर्वक पूर्ण)</span>
+              <span style="color:#16a34a;">${completedB} (${completionRate}%)</span>
+            </div>
+          </div>
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border-left:4px solid #ef4444;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;">
+              <span>4. Cancelled / Rejected (मना / रद्द)</span>
+              <span style="color:#ef4444;">${cancelledB} (${Math.round((cancelledB / totalB) * 100)}%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// 3. Workers Tab
 function renderWorkers() {
   const w = globalData.workers || [];
   return `
@@ -1029,7 +1210,6 @@ function renderWorkers() {
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadWorkersCsv()">📥 Download report (CSV)</button>
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1059,16 +1239,16 @@ function renderWorkers() {
       <table id="workersTable">
         <thead>
           <tr>
-            <th>ID</th>
-            <th>नाम (Name)</th>
-            <th>मोबाइल (Phone)</th>
-            <th>काम (Skills)</th>
-            <th>गाँव / जिला</th>
-            <th>दहाड़ी (₹/दिन)</th>
-            <th>रेटिंग</th>
-            <th>Free Status</th>
-            <th>वेरिफिकेशन</th>
-            <th>कार्रवाई (Actions)</th>
+            <th style="min-width:60px;">ID</th>
+            <th style="min-width:140px;">नाम (Name)</th>
+            <th style="min-width:130px;">मोबाइल (Phone)</th>
+            <th style="min-width:160px;">काम (Skills)</th>
+            <th style="min-width:140px;">गाँव / जिला</th>
+            <th style="min-width:90px;">दहाड़ी (₹/दिन)</th>
+            <th style="min-width:90px;">रेटिंग</th>
+            <th style="min-width:100px;">Free Status</th>
+            <th style="min-width:90px;">वेरिफिकेशन</th>
+            <th style="min-width:280px;">कार्रवाई (Actions)</th>
           </tr>
         </thead>
         <tbody>
@@ -1087,6 +1267,7 @@ function renderWorkers() {
               <td>${x.free_now ? '<span class="badge success">🟢 FREE NOW</span>' : '<span class="badge neutral">व्यस्त</span>'}</td>
               <td>${x.verified ? '<span class="badge success">✔ Verified</span>' : '<span class="badge warning">Pending</span>'}</td>
               <td>
+                <button class="btn-action primary" onclick="openWorkerOfferModal(${x.id})">💼 ऑफर / प्रोफ़ाइल</button>
                 <button class="btn-action ${x.verified ? 'danger' : 'primary'}" onclick="toggleWorkerVerify(${x.id})">${x.verified ? 'Unverify' : '✔ Verify'}</button>
                 <button class="btn-action danger" onclick="toggleUserBlock(${x.id})">${x.is_blocked ? 'Unblock' : '🚫 Block'}</button>
                 <button class="btn-action danger" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="adminDeleteUser(${x.id}, '${esc(x.name)}')">🗑️ Delete</button>
@@ -1153,7 +1334,7 @@ async function adminDeleteUser(id, name) {
   } catch (e) { alert(e.message); }
 }
 
-// 3. Customers
+// 4. Customers
 function renderCustomers() {
   const c = globalData.customers || [];
   return `
@@ -1164,7 +1345,6 @@ function renderCustomers() {
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadCustomersCsv()">📥 Download report (CSV)</button>
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1207,7 +1387,7 @@ function renderCustomers() {
   `;
 }
 
-// 4. Contractors
+// 5. Contractors
 function renderContractors() {
   const c = globalData.contractors || [];
   return `
@@ -1218,7 +1398,6 @@ function renderContractors() {
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadContractorsCsv()">📥 Download report (CSV)</button>
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1269,7 +1448,7 @@ async function toggleContractorVerify(id) {
   } catch (e) { alert(e.message); }
 }
 
-// 5. Bookings
+// 6. Bookings
 function renderBookings() {
   const b = globalData.bookings || [];
   return `
@@ -1280,7 +1459,6 @@ function renderBookings() {
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadBookingsCsv()">📥 Download report (CSV)</button>
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1334,18 +1512,39 @@ async function updateBookingStatus(id, st) {
   } catch (e) { alert(e.message); }
 }
 
-// 6. Payments
+// 7. Payments & Revenue Display
 function renderPayments() {
   const p = globalData.payments || [];
+  const totalAmount = p.reduce((acc, curr) => acc + (curr.amount_paise || 0), 0) / 100;
+  const activeFee = adminSettings.booking_token_fee || 10;
+
   return `
     <div class="page-header">
       <div class="page-title">
-        <h1>Payments & Revenue (राजस्व व भुगतान)</h1>
-        <p>Razorpay ऑनलाइन भुगतान एवं ₹10 टोकन शुल्क का विस्तृत ब्योरा</p>
+        <h1>Payments & Revenue (राजस्व व भुगतान विवरण)</h1>
+        <p>किस-किस ग्राहक से राशि प्राप्त हुई, टोकन शुल्क (₹${activeFee}) एवं ऑनलाइन भुगतान का संपूर्ण विवरण</p>
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadPaymentsCsv()">📥 Download report (CSV)</button>
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <!-- Payment Highlights -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Total Amount Received</div>
+        <div class="val" style="color:#16a34a;">₹${totalAmount.toLocaleString('en-IN')}</div>
+        <div class="sub">Total successful collections</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Transactions</div>
+        <div class="val" style="color:#0f766e;">${p.length}</div>
+        <div class="sub">Payments logged in database</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Current Token Fee Setting</div>
+        <div class="val" style="color:#2563eb;">₹${activeFee}</div>
+        <div class="sub">Per-booking unlock fee</div>
       </div>
     </div>
 
@@ -1355,29 +1554,39 @@ function renderPayments() {
           <tr>
             <th>Txn ID</th>
             <th>Booking ID</th>
-            <th>ग्राहक (Customer)</th>
+            <th>ग्राहक (Customer / Paid By)</th>
             <th>मिस्त्री (Worker)</th>
-            <th>राशि (Amount)</th>
+            <th>प्राप्त राशि (Amount)</th>
             <th>गेटवे (Gateway)</th>
-            <th>Payment ID</th>
-            <th>तारीख</th>
-            <th>स्थिति</th>
+            <th>Payment ID / UTR</th>
+            <th>तारीख व समय</th>
+            <th>स्थिति (Status)</th>
           </tr>
         </thead>
         <tbody>
           ${p.length ? p.map(x => `
             <tr>
-              <td>#${x.id}</td>
-              <td>${x.booking_id ? '#' + x.booking_id : '-'}</td>
-              <td>${esc(x.customer_name || '-')}<br><small>${esc(x.customer_phone || '')}</small></td>
-              <td>${esc(x.worker_name || '-')}<br><small>${esc(x.worker_phone || '')}</small></td>
-              <td><b>₹${((x.amount_paise || 0) / 100).toFixed(2)}</b></td>
-              <td><span class="badge info">${esc(x.gateway || 'Razorpay')}</span></td>
-              <td><code>${esc(x.gateway_payment_id || '-')}</code></td>
+              <td><b>#${x.id}</b></td>
+              <td>${x.booking_id ? '<b>#' + x.booking_id + '</b>' : '<span style="color:#94a3b8;">Direct / General</span>'}</td>
+              <td>
+                <b>${esc(x.customer_name || 'Customer')}</b>
+                <br><a href="tel:${x.customer_phone}" style="color:#0f766e;text-decoration:none;font-size:12px;">📞 ${esc(x.customer_phone || '-')}</a>
+              </td>
+              <td>
+                <b>${esc(x.worker_name || 'Worker')}</b>
+                <br><a href="tel:${x.worker_phone}" style="color:#0f766e;text-decoration:none;font-size:12px;">📞 ${esc(x.worker_phone || '-')}</a>
+              </td>
+              <td><b style="color:#16a34a;font-size:14px;">₹${((x.amount_paise || 0) / 100).toFixed(2)}</b></td>
+              <td><span class="badge ${x.gateway === 'admin_direct' ? 'primary' : 'info'}">${esc(x.gateway || 'Razorpay')}</span></td>
+              <td><code style="font-size:11.5px;color:#334155;">${esc(x.gateway_payment_id || '-')}</code></td>
               <td>${when(x.created_at)}</td>
-              <td><span class="badge ${x.status==='released'?'success':'neutral'}">${esc(x.status)}</span></td>
+              <td>
+                <span class="badge ${x.status==='released'||x.status==='completed'?'success':x.status==='held'?'info':'neutral'}">
+                  ${x.status==='released'||x.status==='completed' ? '✔ प्राप्त (PAID)' : esc(x.status)}
+                </span>
+              </td>
             </tr>
-          `).join('') : '<tr><td colspan="9" style="text-align:center;padding:24px;color:#64748b;">कोई ऑनलाइन भुगतान रिकॉर्ड नहीं मिला।</td></tr>'}
+          `).join('') : '<tr><td colspan="9" style="text-align:center;padding:28px;color:#64748b;font-weight:600;">कोई ऑनलाइन भुगतान रिकॉर्ड नहीं मिला।</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -1395,7 +1604,6 @@ function renderCalls() {
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadCsv('mistribhaiya_calls.csv', globalData.calls)">📥 Download report (CSV)</button>
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1436,9 +1644,6 @@ function renderSos() {
       <div class="page-title">
         <h1 style="color:#dc2626;">🆘 SOS Emergency Alerts</h1>
         <p>मजदूर या मालिक द्वारा दबाए गए आपातकालीन सुरक्षा अलर्ट</p>
-      </div>
-      <div class="header-actions">
-        <button class="btn-filter" style="background:#dc2626;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1495,9 +1700,6 @@ function renderReports() {
       <div class="page-title">
         <h1>⚠️ Complaints & Reports (शिकायतें)</h1>
         <p>उपयोगकर्ताओं द्वारा एक-दूसरे के खिलाफ दर्ज की गई शिकायतें</p>
-      </div>
-      <div class="header-actions">
-        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1636,21 +1838,300 @@ function renderSettings() {
       </div>
     </div>
 
-    <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:24px;max-width:600px;">
+    <!-- Booking Token Fee Configuration Card -->
+    <div style="background:var(--card-bg);border:1.5px solid #86efac;border-radius:var(--radius);padding:24px;max-width:680px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,0.03);">
+      <h3 style="margin-bottom:8px;color:#166534;font-size:16px;display:flex;align-items:center;gap:8px;">
+        💳 ग्राहक बुकिंग टोकन शुल्क (Customer Booking Token Fee)
+      </h3>
+      <p style="font-size:13px;color:#64748b;margin-bottom:16px;line-height:1.5;">
+        जब कोई ग्राहक या ठेकेदार किसी मजदूर/मिस्त्री को बुक करता है, तो उसे ऑनलाइन टोकन शुल्क जमा करना पड़ता है (उदा. ₹10, ₹20, ₹30, ₹50 आदि)। जब तक यह भुगतान नहीं होता, तब तक मिस्त्री के पास OTP व लोकेशन नहीं जाती। आप यहाँ से शुल्क बदल सकते हैं:
+      </p>
+      <div style="display:flex;align-items:center;gap:14px;background:#f0fdf4;padding:16px;border-radius:10px;border:1px solid #bbf7d0;flex-wrap:wrap;">
+        <label style="font-weight:700;font-size:14px;color:#166534;">टोकन शुल्क राशि (INR):</label>
+        <div style="display:flex;align-items:center;background:#fff;border:2px solid #16a34a;border-radius:8px;padding:4px 12px;">
+          <span style="font-weight:800;color:#16a34a;font-size:18px;">₹</span>
+          <input type="number" id="settingsFeeInput" value="${adminSettings.booking_token_fee || 10}" min="1" max="5000" style="width:75px;border:none;outline:none;font-size:18px;font-weight:800;color:#16a34a;padding:2px 6px;">
+        </div>
+        <button class="btn-action primary" onclick="saveBookingFeeFromSettings()" style="padding:10px 20px;font-weight:700;background:#16a34a;font-size:14px;">💾 अपडेट करें (Save Fee)</button>
+      </div>
+    </div>
+
+    <!-- Credentials & System Info -->
+    <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:24px;max-width:680px;">
       <h3 style="margin-bottom:12px;">एडमिन सुरक्षा एवं क्रेडेंशियल्स</h3>
       <p style="font-size:13px;color:#64748b;margin-bottom:16px;">
         एडमिन डैशबोर्ड का एक्सेस केवल मुख्य अधिकृत नंबर <b>9793807864</b> तक सीमित है।
       </p>
-      <div style="background:#f1f5f9;padding:12px 16px;border-radius:8px;font-size:13px;line-height:1.6;">
+      <div style="background:#f1f5f9;padding:14px 18px;border-radius:8px;font-size:13px;line-height:1.7;">
         <div><b>Primary Admin Phone:</b> 9793807864</div>
         <div><b>Default Password:</b> admin123</div>
         <div><b>Firebase Project:</b> mistribhaiya-f5a94</div>
-        <div><b>Firestore Rules:</b> Unlocked & Synced</div>
+        <div><b>Firestore Rules:</b> Unlocked & Live Synchronized</div>
         <div><b>Fast2SMS:</b> Active</div>
         <div><b>Razorpay:</b> Test Mode Configured</div>
       </div>
     </div>
   `;
+}
+
+// ------------------------------------------------------------- Modal & Admin Action Functions
+async function openWorkerOfferModal(wid) {
+  const modal = document.getElementById("workerOfferModal");
+  modal.style.display = "flex";
+  modal.innerHTML = `
+    <div class="login-box" style="max-width:400px;text-align:center;padding:32px;">
+      <div style="font-size:32px;display:inline-block;">⏳</div>
+      <p style="margin-top:12px;font-weight:600;color:#334155;">कारीगर का प्रोफाइल व समीक्षा लोड हो रही है...</p>
+    </div>
+  `;
+
+  try {
+    const res = await api(`/admin/workers/${wid}/detail`);
+    const u = res.user || {};
+    const p = res.profile || {};
+    const bookings = res.bookings || [];
+    const payments = res.payments || [];
+    const completedJobs = bookings.filter(b => b.status === "completed");
+    const reviews = bookings.filter(b => b.rating || b.review);
+
+    modal.innerHTML = `
+      <div class="login-box" style="max-width:760px;width:95%;max-height:92vh;overflow-y:auto;text-align:left;position:relative;padding:24px;border-radius:18px;">
+        <!-- Top header -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1.5px solid #f1f5f9;padding-bottom:14px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div style="width:54px;height:54px;border-radius:50%;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;overflow:hidden;">
+              ${u.avatar ? `<img src="${u.avatar}" style="width:100%;height:100%;object-fit:cover;">` : esc((u.name || 'W').charAt(0).toUpperCase())}
+            </div>
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <h2 style="font-size:20px;font-weight:800;color:#0f172a;margin:0;">${esc(u.name || 'Worker')}</h2>
+                <span class="badge ${p.free_now ? 'success' : 'neutral'}">${p.free_now ? '🟢 FREE NOW' : 'व्यस्त (Busy)'}</span>
+                ${p.verified ? '<span class="badge success">✔ Verified</span>' : '<span class="badge warning">Pending</span>'}
+              </div>
+              <div style="font-size:13px;color:#64748b;margin-top:4px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                <a href="tel:${u.phone}" style="color:#0f766e;font-weight:700;text-decoration:none;">📞 ${esc(u.phone)}</a>
+                <span>📍 ${esc(p.village || 'पता दर्ज नहीं')}</span>
+                <span>🛠️ ${esc(p.skills || 'काम दर्ज नहीं')}</span>
+              </div>
+            </div>
+          </div>
+          <button onclick="closeWorkerOfferModal()" style="background:#f1f5f9;border:none;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer;font-weight:700;color:#475569;display:flex;align-items:center;justify-content:center;">✕</button>
+        </div>
+
+        <!-- 4 Stat Cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-bottom:20px;">
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;text-align:center;">
+            <div style="font-size:11px;color:#64748b;font-weight:600;">दहाड़ी (Daily Wage)</div>
+            <div style="font-size:18px;font-weight:800;color:#0f766e;">₹${p.daily_rate || 500}/day</div>
+          </div>
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;text-align:center;">
+            <div style="font-size:11px;color:#64748b;font-weight:600;">काम का अनुभव</div>
+            <div style="font-size:18px;font-weight:800;color:#0f172a;">${p.experience_years || 1} Years</div>
+          </div>
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;text-align:center;">
+            <div style="font-size:11px;color:#64748b;font-weight:600;">रेटिंग व समीक्षा</div>
+            <div style="font-size:18px;font-weight:800;color:#eab308;">⭐ ${(p.rating_avg || 0).toFixed(1)} <small style="font-size:11px;color:#64748b;">(${p.rating_count || 0})</small></div>
+          </div>
+          <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;text-align:center;">
+            <div style="font-size:11px;color:#64748b;font-weight:600;">सफलतापूर्वक पूर्ण कार्य</div>
+            <div style="font-size:18px;font-weight:800;color:#16a34a;">${p.jobs_done || completedJobs.length} Jobs</div>
+          </div>
+        </div>
+
+        <!-- Section 1: Previous Work Reviews & Ratings -->
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:18px;">
+          <h4 style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 10px;display:flex;align-items:center;gap:6px;">
+            ⭐ ग्राहक समीक्षाएं एवं रेटिंग्स (Reviews & Work Feedback)
+          </h4>
+          ${reviews.length ? `
+            <div style="display:flex;flex-direction:column;gap:8px;max-height:160px;overflow-y:auto;">
+              ${reviews.map(r => `
+                <div style="background:#f8fafc;padding:9px 12px;border-radius:8px;border-left:3px solid #eab308;font-size:12.5px;">
+                  <div style="display:flex;justify-content:space-between;font-weight:700;">
+                    <span>${esc(r.customer_name || 'Ghar Malik')} · <small style="color:#64748b;">${esc(r.skill || 'काम')}</small></span>
+                    <span style="color:#eab308;">⭐ ${r.rating || 5} Stars</span>
+                  </div>
+                  <div style="color:#475569;margin-top:4px;">"${esc(r.review || 'काम बहुत अच्छा किया')}"</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <p style="margin:0;font-size:12.5px;color:#64748b;padding:8px;background:#f8fafc;border-radius:6px;">
+              अभी कोई लिखित ग्राहक समीक्षा नहीं है। नया कारीगर है।
+            </p>
+          `}
+        </div>
+
+        <!-- Section 2: Two Interactive Actions: Send Offer OR Send Payment -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:14px;">
+          
+          <!-- Box A: Direct Job Offer -->
+          <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:16px;">
+            <h4 style="font-size:14px;font-weight:700;color:#166534;margin:0 0 10px;display:flex;align-items:center;gap:6px;">
+              💼 कारीगर को डायरेक्ट काम ऑफर करें
+            </h4>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:#166534;">काम / हुनर (Skill):</label>
+                <input type="text" id="offerSkill" value="${esc((p.skills || 'mason').split(',')[0].trim())}" style="width:100%;padding:6px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;margin-top:2px;">
+              </div>
+              <div style="display:flex;gap:8px;">
+                <div style="flex:1;">
+                  <label style="font-size:11.5px;font-weight:600;color:#166534;">दहाड़ी (₹/दिन):</label>
+                  <input type="number" id="offerRate" value="${p.daily_rate || 500}" style="width:100%;padding:6px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;margin-top:2px;">
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:11.5px;font-weight:600;color:#166534;">दिन की संख्या:</label>
+                  <input type="number" id="offerDays" value="1" min="1" max="90" style="width:100%;padding:6px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;margin-top:2px;">
+                </div>
+              </div>
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:#166534;">काम की जगह (Address/Location):</label>
+                <input type="text" id="offerAddress" value="${esc(p.village || 'मेन साइट')}" style="width:100%;padding:6px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;margin-top:2px;">
+              </div>
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:#166534;">नोट / निर्देश:</label>
+                <input type="text" id="offerNote" placeholder="उदा. सुबह 8 बजे औजारों के साथ पहुंचे" style="width:100%;padding:6px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;margin-top:2px;">
+              </div>
+              <button onclick="submitWorkerOffer(${wid})" class="btn-action primary" style="background:#16a34a;padding:8px 14px;font-weight:700;margin-top:6px;justify-content:center;">
+                💼 ऑफर भेजें (Send Offer)
+              </button>
+            </div>
+          </div>
+
+          <!-- Box B: Direct Payment -->
+          <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;padding:16px;">
+            <h4 style="font-size:14px;font-weight:700;color:#1e40af;margin:0 0 10px;display:flex;align-items:center;gap:6px;">
+              💰 कारीगर को सीधे पैसे भेजें / रिकॉर्ड करें
+            </h4>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:#1e40af;">भुगतान राशि (INR ₹):</label>
+                <input type="number" id="payAmount" value="${p.daily_rate || 500}" min="1" style="width:100%;padding:6px 10px;border:1px solid #93c5fd;border-radius:6px;font-size:13px;margin-top:2px;font-weight:700;color:#1e40af;">
+              </div>
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:#1e40af;">भुगतान विवरण / UTR / ट्रांजेक्शन ID:</label>
+                <input type="text" id="payUtr" placeholder="उदा. UPI/IMPS Ref No या Cash" style="width:100%;padding:6px 10px;border:1px solid #93c5fd;border-radius:6px;font-size:13px;margin-top:2px;">
+              </div>
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:#1e40af;">भुगतान का कारण / नोट:</label>
+                <input type="text" id="payNote" placeholder="उदा. एडवांस मजदूरी / बोनस" style="width:100%;padding:6px 10px;border:1px solid #93c5fd;border-radius:6px;font-size:13px;margin-top:2px;">
+              </div>
+              <div style="font-size:11.5px;color:#64748b;margin-top:4px;">
+                कारीगर के मोबाइल ऐप पर तुरंत ₹ राशि की सूचना और नोटिफिकेशन पहुंच जाएगा।
+              </div>
+              <button onclick="submitWorkerPayment(${wid})" class="btn-action primary" style="background:#2563eb;padding:8px 14px;font-weight:700;margin-top:10px;justify-content:center;">
+                💰 पेमेंट भेजें (Send Payment)
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Section 3: Recent Direct Payment History -->
+        ${payments.length ? `
+          <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:14px;">
+            <h4 style="font-size:13px;font-weight:700;color:#475569;margin:0 0 8px;">हाल के भुगतान रिकॉर्ड (Payment History):</h4>
+            <div style="display:flex;flex-direction:column;gap:6px;max-height:120px;overflow-y:auto;font-size:12px;">
+              ${payments.slice(0, 5).map(pay => `
+                <div style="display:flex;justify-content:space-between;background:#f8fafc;padding:6px 10px;border-radius:6px;">
+                  <span><b>₹${((pay.amount_paise || 0) / 100).toFixed(2)}</b> (${esc(pay.gateway || 'direct')})</span>
+                  <span style="color:#64748b;">${when(pay.created_at)} · <span class="badge success">${pay.status}</span></span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+      </div>
+    `;
+  } catch (err) {
+    modal.innerHTML = `
+      <div class="login-box" style="max-width:440px;text-align:center;padding:24px;">
+        <h3 style="color:#dc2626;">त्रुटि</h3>
+        <p>${err.message}</p>
+        <button onclick="closeWorkerOfferModal()" class="btn-action primary" style="margin-top:12px;">बंद करें</button>
+      </div>
+    `;
+  }
+}
+
+function closeWorkerOfferModal() {
+  const modal = document.getElementById("workerOfferModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function submitWorkerOffer(wid) {
+  const skill = document.getElementById("offerSkill")?.value.trim() || "mason";
+  const daily_rate = parseInt(document.getElementById("offerRate")?.value || "500", 10);
+  const days = parseInt(document.getElementById("offerDays")?.value || "1", 10);
+  const address = document.getElementById("offerAddress")?.value.trim() || "";
+  const note = document.getElementById("offerNote")?.value.trim() || "";
+
+  try {
+    const res = await api(`/admin/workers/${wid}/send-offer`, "POST", { skill, daily_rate, days, address, note });
+    if (res.ok) {
+      showToast(`कारीगर को ₹${daily_rate}/दिन का ऑफर सफलतापूर्वक भेज दिया गया! 💼`);
+      closeWorkerOfferModal();
+      fetchAllData();
+    }
+  } catch (e) {
+    alert("ऑफर भेजने में त्रुटि: " + e.message);
+  }
+}
+
+async function submitWorkerPayment(wid) {
+  const amount = parseInt(document.getElementById("payAmount")?.value || "0", 10);
+  const utr = document.getElementById("payUtr")?.value.trim() || "";
+  const note = document.getElementById("payNote")?.value.trim() || "";
+
+  if (!amount || amount <= 0) {
+    alert("कृपया मान्य राशि दर्ज करें!");
+    return;
+  }
+
+  try {
+    const res = await api(`/admin/workers/${wid}/send-payment`, "POST", { amount, utr, note });
+    if (res.ok) {
+      showToast(`कारीगर को ₹${amount} का भुगतान सफलतापूर्वक भेजा गया! 💰`);
+      closeWorkerOfferModal();
+      fetchAllData();
+    }
+  } catch (e) {
+    alert("भुगतान भेजने में त्रुटि: " + e.message);
+  }
+}
+
+async function saveBookingFeeFromQuick() {
+  const val = parseInt(document.getElementById("quickFeeInput")?.value || "10", 10);
+  if (isNaN(val) || val < 1) {
+    alert("कृपया कम से कम ₹1 शुल्क दर्ज करें!");
+    return;
+  }
+  try {
+    await api("/admin/settings", "POST", { booking_token_fee: val });
+    adminSettings.booking_token_fee = val;
+    showToast(`ग्राहक बुकिंग टोकन शुल्क अपडेट होकर ₹${val} हो गया! ✅`);
+    fetchAllData();
+  } catch (e) {
+    alert("शुल्क सेव करने में त्रुटि: " + e.message);
+  }
+}
+
+async function saveBookingFeeFromSettings() {
+  const val = parseInt(document.getElementById("settingsFeeInput")?.value || "10", 10);
+  if (isNaN(val) || val < 1) {
+    alert("कृपया कम से कम ₹1 शुल्क दर्ज करें!");
+    return;
+  }
+  try {
+    await api("/admin/settings", "POST", { booking_token_fee: val });
+    adminSettings.booking_token_fee = val;
+    showToast(`ग्राहक बुकिंग टोकन शुल्क अपडेट होकर ₹${val} हो गया! ✅`);
+    fetchAllData();
+  } catch (e) {
+    alert("शुल्क सेव करने में त्रुटि: " + e.message);
+  }
 }
 
 // CSV Export Functions
@@ -1740,24 +2221,46 @@ function downloadPaymentsCsv() {
   downloadCsv("mistribhaiya_payments_report.csv", data);
 }
 
-function downloadAllSummaryCsv() {
-  const s = globalData.stats || {};
-  const data = [
-    { "Metric": "Total Registered Users", "Value": s.total_users || (globalData.workers.length + globalData.customers.length) },
-    { "Metric": "Workers (मिस्त्री/मजदूर)", "Value": globalData.workers.length },
-    { "Metric": "Customers (घर मालिक)", "Value": globalData.customers.length },
-    { "Metric": "Contractors (ठेकेदार)", "Value": globalData.contractors.length },
-    { "Metric": "Free Workers Right Now", "Value": s.workers_free_now || 0 },
-    { "Metric": "Total Bookings", "Value": globalData.bookings.length },
-    { "Metric": "Completed Bookings", "Value": s.bookings?.completed || 0 },
-    { "Metric": "Active Accepted Bookings", "Value": s.bookings?.accepted || 0 },
-    { "Metric": "Pending Requested Bookings", "Value": s.bookings?.requested || 0 },
-    { "Metric": "Total Calls Logged", "Value": s.calls || 0 },
-    { "Metric": "Total SOS Alerts", "Value": globalData.safety.sos.length },
-    { "Metric": "Total Complaints Filed", "Value": globalData.safety.reports.length },
-    { "Metric": "Total Estimated Revenue (INR)", "Value": s.total_revenue || (globalData.bookings.length * 10) }
-  ];
-  downloadCsv("mistribhaiya_platform_summary.csv", data);
+// Master All-Users CSV Export (Every single user + DELETED status + complete metrics)
+async function downloadAllSummaryCsv() {
+  try {
+    showToast("मास्टर CSV डेटा लोड हो रहा है... 📥");
+    const res = await api("/admin/users/master-report");
+    const users = res.users || [];
+    if (!users.length) {
+      alert("कोई यूजर डेटा नहीं मिला।");
+      return;
+    }
+    const data = users.map(u => {
+      let status = "ACTIVE";
+      if (u.is_deleted === 1) {
+        status = "DELETED";
+      } else if (u.is_blocked === 1) {
+        status = "BLOCKED";
+      }
+      return {
+        "User ID": u.id,
+        "Name": u.name || "User",
+        "Phone": u.phone || "-",
+        "Role": u.role ? u.role.toUpperCase() : "-",
+        "Account Status": status,
+        "Category & Skills": u.skills || "-",
+        "Village / City": u.village || "-",
+        "Daily Rate / Budget (INR)": u.daily_rate || u.min_budget || 0,
+        "Rating (Avg)": (u.rating_avg || 0).toFixed(1) + (u.rating_count ? ` (${u.rating_count})` : " (0)"),
+        "Experience (Years)": u.exp_years || 0,
+        "Total Bookings": u.total_bookings || 0,
+        "Total Amount (INR)": u.total_amount || 0,
+        "Deleted At": u.is_deleted === 1 ? when(u.deleted_at) : "-",
+        "Registration Date": when(u.created_at)
+      };
+    });
+    downloadCsv("mistribhaiya_all_users_master_report.csv", data);
+    showToast("मास्टर CSV (सम्पूर्ण यूज़र्स व डिलीटेड स्टेटस) सफलतापूर्वक डाउनलोड हो गई! 📥");
+  } catch (e) {
+    console.error("Master CSV export failed:", e);
+    alert("CSV डाउनलोड में त्रुटि: " + e.message);
+  }
 }
 
 // Initial Boot
