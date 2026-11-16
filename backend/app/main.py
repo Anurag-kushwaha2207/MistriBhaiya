@@ -1453,6 +1453,37 @@ def admin_toggle_block_user(uid: int, u=Depends(current_user)):
         new_b = c.execute("SELECT is_blocked FROM users WHERE id=?", (uid,)).fetchone()
     return {"ok": True, "is_blocked": bool(new_b[0] if new_b else 0)}
 
+@app.delete("/api/admin/users/{uid}")
+def admin_delete_user(uid: int, u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        row = c.execute("SELECT id, phone, name FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "User not found")
+        phone = row["phone"]
+        
+        c.execute("DELETE FROM payments WHERE customer_id=? OR worker_id=?", (uid, uid))
+        c.execute("DELETE FROM bookings WHERE customer_id=? OR worker_id=?", (uid, uid))
+        c.execute("DELETE FROM job_interests WHERE worker_id=?", (uid,))
+        c.execute("DELETE FROM jobs WHERE customer_id=?", (uid,))
+        c.execute("DELETE FROM instant_offers WHERE worker_id=?", (uid,))
+        c.execute("DELETE FROM instant_requests WHERE customer_id=?", (uid,))
+        c.execute("DELETE FROM messages WHERE sender_id=? OR receiver_id=?", (uid, uid))
+        c.execute("DELETE FROM notifications WHERE user_id=?", (uid,))
+        c.execute("DELETE FROM reports WHERE reporter_id=? OR reported_id=?", (uid, uid))
+        c.execute("DELETE FROM sos_events WHERE user_id=?", (uid,))
+        c.execute("DELETE FROM call_logs WHERE from_user_id=? OR to_user_id=?", (uid, uid))
+        c.execute("DELETE FROM crew_members WHERE contractor_id=? OR worker_id=?", (uid, uid))
+        c.execute("DELETE FROM projects WHERE contractor_id=?", (uid,))
+        c.execute("DELETE FROM worker_profiles WHERE user_id=?", (uid,))
+        c.execute("DELETE FROM contractor_profiles WHERE user_id=?", (uid,))
+        if phone:
+            c.execute("DELETE FROM otps WHERE phone=?", (phone,))
+        c.execute("DELETE FROM users WHERE id=?", (uid,))
+
+    firebase_sync.delete_user_from_firebase(uid, phone)
+    return {"ok": True, "deleted_user_id": uid, "phone": phone}
+
 @app.get("/api/admin/bookings")
 def admin_bookings(u=Depends(current_user)):
     need_admin(u)

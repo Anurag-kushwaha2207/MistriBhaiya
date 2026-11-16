@@ -175,10 +175,8 @@ export default function BookingsView({
   return (
     <div>
       <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>📋 {t('bookings')}</h2>
-        <button className="sec" style={{ padding: '6px 12px', fontSize: '13px' }} onClick={loadBookings}>
-          🔄 रीफ्रेश
-        </button>
+        <h2 style={{ margin: 0, fontSize: '18px' }}>📋 {t('bookings')}</h2>
+        {loading && <span className="sub" style={{ fontSize: '12px' }}>🔄 सिंक हो रहा है...</span>}
       </div>
 
       {loading && <div style={{ textAlign: 'center', padding: '16px' }} className="sub">लोड हो रहा है…</div>}

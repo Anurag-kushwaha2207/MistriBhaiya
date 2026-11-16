@@ -126,6 +126,15 @@ export default function App() {
     }
   }, [token, refreshTrigger, fetchNotifications]);
 
+  // Seamless real-time auto-refresh polling every 5s so users never need to click manual refresh
+  useEffect(() => {
+    if (!token) return;
+    const pollInterval = setInterval(() => {
+      setRefreshTrigger(c => c + 1);
+    }, 5000);
+    return () => clearInterval(pollInterval);
+  }, [token]);
+
   // Fetch Meta & Me
   const initApp = useCallback(async () => {
     try {

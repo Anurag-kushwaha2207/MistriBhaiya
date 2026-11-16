@@ -1089,6 +1089,7 @@ function renderWorkers() {
               <td>
                 <button class="btn-action ${x.verified ? 'danger' : 'primary'}" onclick="toggleWorkerVerify(${x.id})">${x.verified ? 'Unverify' : '✔ Verify'}</button>
                 <button class="btn-action danger" onclick="toggleUserBlock(${x.id})">${x.is_blocked ? 'Unblock' : '🚫 Block'}</button>
+                <button class="btn-action danger" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="adminDeleteUser(${x.id}, '${esc(x.name)}')">🗑️ Delete</button>
               </td>
             </tr>
           `).join('')}
@@ -1137,6 +1138,21 @@ async function toggleUserBlock(id) {
   } catch (e) { alert(e.message); }
 }
 
+async function adminDeleteUser(id, name) {
+  if (!confirm(`क्या आप सचमुच ${name || 'इस यूजर'} (ID: ${id}) को हमेशा के लिए हटाना चाहते हैं?\n\nचेतावनी: यह यूजर SQLite और Firebase Firestore दोनों से पूरी तरह हमेशा के लिए डिलीट हो जाएगा!`)) {
+    return;
+  }
+  try {
+    const res = await api(`/admin/users/${id}`, "DELETE");
+    if (res.ok) {
+      showToast("यूजर और उसका डेटा हमेशा के लिए डिलीट कर दिया गया! 🗑️");
+      fetchAllData();
+    } else {
+      alert("डिलीट नहीं हो सका: " + (res.error || "त्रुटि"));
+    }
+  } catch (e) { alert(e.message); }
+}
+
 // 3. Customers
 function renderCustomers() {
   const c = globalData.customers || [];
@@ -1181,6 +1197,7 @@ function renderCustomers() {
               <td>${esc(x.last_address || '-')}</td>
               <td>
                 <button class="btn-action danger" onclick="toggleUserBlock(${x.id})">${x.is_blocked ? 'Unblock' : '🚫 Block'}</button>
+                <button class="btn-action danger" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="adminDeleteUser(${x.id}, '${esc(x.name)}')">🗑️ Delete</button>
               </td>
             </tr>
           `).join('')}
@@ -1234,6 +1251,7 @@ function renderContractors() {
               <td>
                 <button class="btn-action ${x.verified ? 'danger' : 'primary'}" onclick="toggleContractorVerify(${x.id})">${x.verified ? 'Unverify' : '✔ Verify'}</button>
                 <button class="btn-action danger" onclick="toggleUserBlock(${x.id})">${x.is_blocked ? 'Unblock' : '🚫 Block'}</button>
+                <button class="btn-action danger" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="adminDeleteUser(${x.id}, '${esc(x.name)}')">🗑️ Delete</button>
               </td>
             </tr>
           `).join('')}

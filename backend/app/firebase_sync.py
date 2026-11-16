@@ -397,6 +397,35 @@ def push_to_firebase(collection: str, doc_id: str, data: Dict[str, Any]):
     threading.Thread(target=_write_doc_sync, args=(collection, str(doc_id), data), daemon=True).start()
 
 
+def delete_fs_doc(collection: str, doc_id: str):
+    """Delete a document from Firestore."""
+    def _del():
+        try:
+            url = f"{FIRESTORE_BASE_URL}/{collection}/{doc_id}"
+            req = urllib.request.Request(url, method="DELETE")
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                logger.info("Deleted Firestore doc %s/%s: HTTP %s", collection, doc_id, resp.status)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                logger.debug("Firestore doc %s/%s already deleted or not found", collection, doc_id)
+            else:
+                logger.warning("Failed to delete Firestore doc %s/%s: HTTP %s", collection, doc_id, e.code)
+        except Exception as e:
+            logger.warning("Error deleting Firestore doc %s/%s: %s", collection, doc_id, e)
+    threading.Thread(target=_del, daemon=True).start()
+
+
+def delete_user_from_firebase(user_id: int, phone: Optional[str] = None):
+    """Purge user from all Firestore collections."""
+    uid_str = str(user_id)
+    delete_fs_doc("users", uid_str)
+    delete_fs_doc("worker_profiles", uid_str)
+    delete_fs_doc("contractor_profiles", uid_str)
+    if phone:
+        delete_fs_doc("auth_credentials", str(phone))
+        delete_fs_doc("otps", str(phone))
+
+
 def sync_user(user_id: int):
     """Sync a user record to Firestore."""
     try:
