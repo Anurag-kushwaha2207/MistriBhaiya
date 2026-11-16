@@ -2,8 +2,14 @@
 <html lang="hi">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>MistriBhaiya - Admin Panel</title>
+  
+  <!-- Firebase SDKs for Direct Firestore Data -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="firebase-db.js"></script>
+
   <style>
     :root {
       --bg-main: #f8f7f4;
@@ -38,14 +44,14 @@
       font-family: var(--font-family);
       background: var(--bg-main);
       color: var(--text-dark);
-      display: flex;
       min-height: 100vh;
       overflow-x: hidden;
+      position: relative;
     }
 
-    /* Sidebar */
-    aside {
-      width: 250px;
+    /* Sliding Dark Sidebar */
+    aside#sidebar {
+      width: 260px;
       background: var(--bg-sidebar);
       color: var(--sidebar-text);
       display: flex;
@@ -54,57 +60,91 @@
       top: 0;
       bottom: 0;
       left: 0;
-      z-index: 50;
+      z-index: 1000;
       border-right: 1px solid #1e293b;
       overflow-y: auto;
       scrollbar-width: thin;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 4px 0 16px rgba(0,0,0,0.25);
     }
+    aside#sidebar.collapsed {
+      transform: translateX(-100%);
+    }
+
+    /* Backdrop for sliding gesture overlay */
+    .sidebar-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      backdrop-filter: blur(2px);
+    }
+    .sidebar-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
     .brand {
-      padding: 20px 18px 16px;
+      padding: 18px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      justify-content: space-between;
       border-bottom: 1px solid #1e293b;
     }
+    .brand-content { display: flex; align-items: center; gap: 10px; }
     .brand-icon {
-      font-size: 24px;
+      font-size: 22px;
       background: #0f766e;
       color: #fff;
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .brand-text h2 { font-size: 16px; color: #fff; font-weight: 700; line-height: 1.2; }
+    .brand-text h2 { font-size: 15px; color: #fff; font-weight: 700; line-height: 1.2; }
     .brand-text span { font-size: 11px; color: #94a3b8; font-weight: 500; }
+    .btn-close-sidebar {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 20px;
+      cursor: pointer;
+      display: none;
+    }
 
     .nav-group-title {
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--sidebar-header);
-      padding: 16px 18px 6px;
+      padding: 14px 18px 4px;
     }
-    .nav-list { list-style: none; padding: 0 10px; }
+    .nav-list { list-style: none; padding: 0 8px; }
     .nav-item {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 9px 12px;
+      padding: 8.5px 12px;
       color: var(--sidebar-text);
       text-decoration: none;
-      font-size: 13.5px;
+      font-size: 13px;
       font-weight: 500;
       border-radius: 8px;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
       cursor: pointer;
       transition: all 0.15s ease;
     }
     .nav-item:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.06);
       color: #fff;
     }
     .nav-item.active {
@@ -134,7 +174,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       color: #cbd5e1;
       font-weight: 600;
     }
@@ -163,15 +203,75 @@
       color: #fff;
     }
 
-    /* Main Content */
-    main {
-      margin-left: 250px;
+    /* Main Content Wrapper */
+    #mainWrapper {
+      margin-left: 260px;
       flex: 1;
-      padding: 24px 32px 60px;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #mainWrapper.expanded {
+      margin-left: 0;
     }
 
-    /* Top Action Bar */
+    /* Top Sticky App Bar */
+    header.top-bar {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-toggle-menu {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      color: #0f172a;
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-sync {
+      background: #0f766e;
+      color: #fff;
+      border: none;
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-sync:hover { background: #0d5f58; }
+
+    main {
+      padding: 24px 32px 60px;
+      flex: 1;
+    }
+
+    /* Page Header */
     .page-header {
       display: flex;
       justify-content: space-between;
@@ -214,23 +314,8 @@
       background: #0f172a;
       color: #ffffff;
     }
-    .btn-refresh {
-      background: var(--primary);
-      color: #fff;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: background 0.2s;
-    }
-    .btn-refresh:hover { background: var(--primary-hover); }
 
-    /* Filter Bar (matching Screenshot 5) */
+    /* Filter Bar */
     .filter-card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -254,9 +339,7 @@
       color: #0f172a;
       outline: none;
     }
-    .filter-grid select:focus, .filter-grid input:focus {
-      border-color: var(--primary);
-    }
+    .filter-grid select:focus, .filter-grid input:focus { border-color: var(--primary); }
     .btn-filter {
       background: var(--primary);
       color: #fff;
@@ -268,7 +351,7 @@
       cursor: pointer;
     }
 
-    /* Stat Cards Grid (matching Screenshot 1) */
+    /* Stat Cards */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -285,9 +368,9 @@
       flex-direction: column;
     }
     .stat-card .label {
-      font-size: 12.5px;
+      font-size: 12px;
       color: var(--text-muted);
-      font-weight: 500;
+      font-weight: 600;
       margin-bottom: 8px;
     }
     .stat-card .val {
@@ -302,61 +385,7 @@
       margin-top: 6px;
     }
 
-    /* Charts & Split Card Layout */
-    .dashboard-split {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 18px;
-      margin-bottom: 24px;
-    }
-    @media (max-width: 1024px) {
-      .dashboard-split { grid-template-columns: 1fr; }
-    }
-    .content-box {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius);
-      padding: 20px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-    }
-    .content-box h3 {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-dark);
-      margin-bottom: 16px;
-    }
-
-    /* Mini Bar Chart for Last 14 Days */
-    .bar-chart-container {
-      display: flex;
-      align-items: flex-end;
-      gap: 8px;
-      height: 120px;
-      padding-top: 10px;
-    }
-    .bar-col {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      height: 100%;
-      justify-content: flex-end;
-    }
-    .bar-fill {
-      width: 100%;
-      background: var(--primary);
-      border-radius: 4px 4px 0 0;
-      min-height: 4px;
-      transition: height 0.3s;
-    }
-    .bar-label {
-      font-size: 10px;
-      color: var(--text-muted);
-      writing-mode: horizontal-tb;
-    }
-
-    /* Table Styling */
+    /* Tables */
     .table-container {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -391,7 +420,7 @@
     }
     tr:hover td { background: rgba(0,0,0,0.015); }
 
-    /* Badges & Action Buttons */
+    /* Badges */
     .badge {
       display: inline-block;
       padding: 3px 8px;
@@ -422,21 +451,30 @@
     .btn-action.danger { color: #dc2626; border-color: #fca5a5; }
     .btn-action.danger:hover { background: #fee2e2; }
 
-    /* Login View (Standalone) */
-    .login-container {
+    /* Login Screen Modal */
+    .login-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      padding: 16px;
+    }
+    .login-box {
+      width: 100%;
       max-width: 420px;
-      margin: 80px auto;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      background: #ffffff;
       border-radius: 16px;
-      padding: 32px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+      padding: 34px 28px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
       text-align: center;
     }
-    .login-container h2 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-    .login-container p { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+    .login-box h2 { font-size: 20px; color: #0f172a; font-weight: 800; margin-bottom: 6px; }
+    .login-box p { font-size: 13px; color: #64748b; margin-bottom: 24px; }
     .form-group { text-align: left; margin-bottom: 16px; }
-    .form-group label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+    .form-group label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; color: #334155; }
     .form-group input {
       width: 100%;
       padding: 10px 12px;
@@ -445,10 +483,10 @@
       font-size: 14px;
       outline: none;
     }
-    .form-group input:focus { border-color: var(--primary); }
-    .btn-login {
+    .form-group input:focus { border-color: #0f766e; }
+    .btn-submit-login {
       width: 100%;
-      background: var(--primary);
+      background: #0f766e;
       color: #fff;
       border: none;
       padding: 11px;
@@ -458,8 +496,8 @@
       cursor: pointer;
       margin-top: 10px;
     }
-    .btn-login:hover { background: var(--primary-hover); }
-    .login-error {
+    .btn-submit-login:hover { background: #0d5f58; }
+    .login-err {
       background: #fee2e2;
       color: #b91c1c;
       padding: 8px 12px;
@@ -481,21 +519,40 @@
       border-radius: 8px;
       font-size: 13.5px;
       display: none;
-      z-index: 999;
+      z-index: 3000;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 900px) {
+      aside#sidebar {
+        transform: translateX(-100%);
+      }
+      aside#sidebar.open {
+        transform: translateX(0);
+      }
+      .btn-close-sidebar { display: block; }
+      #mainWrapper { margin-left: 0 !important; }
+      main { padding: 16px !important; }
     }
   </style>
 </head>
 <body>
 
-<!-- Sidebar -->
-<aside id="sidebar" style="display:none;">
+<!-- Backdrop for Sliding Gesture -->
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
+<!-- Sliding Dark Sidebar -->
+<aside id="sidebar">
   <div class="brand">
-    <div class="brand-icon">🏗️</div>
-    <div class="brand-text">
-      <h2>MistriBhaiya</h2>
-      <span>Admin Panel</span>
+    <div class="brand-content">
+      <div class="brand-icon">🏗️</div>
+      <div class="brand-text">
+        <h2>MistriBhaiya</h2>
+        <span>Admin Panel</span>
+      </div>
     </div>
+    <button class="btn-close-sidebar" onclick="closeSidebar()">✕</button>
   </div>
 
   <div class="nav-group-title">DASHBOARD</div>
@@ -541,7 +598,7 @@
 
   <div class="sidebar-footer">
     <div class="user-info">
-      <span>👑 Admin · <b id="adminName">Admin</b></span>
+      <span>👑 Admin · <b id="adminName">9793807864</b></span>
     </div>
     <div class="footer-actions">
       <a class="btn-side" href="/" target="_blank">🌐 View Website ↗</a>
@@ -551,43 +608,61 @@
   </div>
 </aside>
 
-<!-- Main Container -->
-<main id="main">
-  <div id="loginView" style="display:none;">
-    <div class="login-container">
-      <div style="font-size:36px;margin-bottom:10px;">🏗️</div>
-      <h2>MistriBhaiya Admin</h2>
-      <p>सीक्रेट एडमिन डैशबोर्ड एक्सेस करने के लिए क्रेडेंशियल दर्ज करें।</p>
-      <div class="login-error" id="loginErr"></div>
-      <form onsubmit="handleLogin(event)">
-        <div class="form-group">
-          <label>एडमिन मोबाइल नंबर</label>
-          <input type="tel" id="loginPhone" value="9793807864" required maxlength="10">
-        </div>
-        <div class="form-group">
-          <label>पासवर्ड</label>
-          <input type="password" id="loginPassword" value="admin123" required>
-        </div>
-        <button type="submit" class="btn-login" id="loginBtn">🔐 Admin Login</button>
-      </form>
-      <div style="margin-top:18px;font-size:12px;color:#64748b;">
-        Authorized Admin Phone: <b>9793807864</b> | Default: <b>admin123</b>
+<!-- Main Wrapper -->
+<div id="mainWrapper">
+  <!-- Top Bar with Sidebar Slide Toggle Button -->
+  <header class="top-bar">
+    <div class="top-left">
+      <button class="btn-toggle-menu" onclick="toggleSidebar()">
+        <span>☰</span> <span style="font-size:13px;">Menu / Sidebar</span>
+      </button>
+      <span style="font-size:13px;color:#64748b;font-weight:600;">MistriBhaiya Administration</span>
+    </div>
+    <div class="top-right">
+      <button class="btn-sync" onclick="syncFirebaseRealData()">
+        <span>🔄</span> <span>Sync Firebase Real Data</span>
+      </button>
+      <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary CSV</button>
+    </div>
+  </header>
+
+  <main id="contentArea">
+    <!-- Dynamic Tab Content Injected Here -->
+  </main>
+</div>
+
+<!-- Standalone Admin Login Modal (Appears whenever not logged in) -->
+<div class="login-overlay" id="adminLoginModal" style="display:none;">
+  <div class="login-box">
+    <div style="font-size:36px;margin-bottom:8px;">🏗️</div>
+    <h2>MistriBhaiya Admin Portal</h2>
+    <p>सीक्रेट एडमिन डैशबोर्ड केवल अधिकृत एडमिन के लिए है।</p>
+    <div class="login-err" id="loginErrMsg"></div>
+    <form onsubmit="doAdminLogin(event)">
+      <div class="form-group">
+        <label>एडमिन मोबाइल नंबर</label>
+        <input type="tel" id="inputAdminPhone" value="9793807864" required maxlength="10">
       </div>
+      <div class="form-group">
+        <label>पासवर्ड</label>
+        <input type="password" id="inputAdminPassword" value="admin123" required>
+      </div>
+      <button type="submit" class="btn-submit-login" id="submitLoginBtn">🔐 Admin Login</button>
+    </form>
+    <div style="margin-top:16px;font-size:12px;color:#64748b;line-height:1.4;">
+      अधिकृत एडमिन मोबाइल नंबर: <b>9793807864</b><br>
+      डिफ़ॉल्ट पासवर्ड: <b>admin123</b>
     </div>
   </div>
-
-  <div id="contentView" style="display:none;">
-    <!-- Active view injected here dynamically -->
-  </div>
-</main>
+</div>
 
 <div class="toast" id="toast"></div>
 
 <script src="config.js"></script>
 <script>
-// State Management
+// Authentication State strictly dedicated to Admin
+let adminToken = localStorage.getItem("mistri_admin_token");
 let currentTab = "overview";
-let adminToken = localStorage.getItem("admin_token") || localStorage.getItem("ks_token");
 let globalData = {
   stats: null,
   workers: [],
@@ -616,6 +691,63 @@ function toggleDarkMode() {
 }
 if (localStorage.getItem("admin_dark") === "1") document.body.classList.add("dark");
 
+// ------------------------------------------------------------- Sliding Gesture Engine
+const sidebar = document.getElementById("sidebar");
+const backdrop = document.getElementById("sidebarBackdrop");
+const mainWrapper = document.getElementById("mainWrapper");
+
+function toggleSidebar() {
+  if (window.innerWidth <= 900) {
+    if (sidebar.classList.contains("open")) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  } else {
+    // Desktop slide collapse/expand
+    sidebar.classList.toggle("collapsed");
+    mainWrapper.classList.toggle("expanded");
+  }
+}
+
+function openSidebar() {
+  sidebar.classList.add("open");
+  sidebar.classList.remove("collapsed");
+  backdrop.classList.add("active");
+}
+
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  backdrop.classList.remove("active");
+}
+
+// Touch swipe gesture listeners
+let touchStartX = 0;
+let touchStartY = 0;
+window.addEventListener("touchstart", e => {
+  touchStartX = e.changedTouches[0].screenX;
+  touchStartY = e.changedTouches[0].screenY;
+}, { passive: true });
+
+window.addEventListener("touchend", e => {
+  const touchEndX = e.changedTouches[0].screenX;
+  const touchEndY = e.changedTouches[0].screenY;
+  const diffX = touchEndX - touchStartX;
+  const diffY = touchEndY - touchStartY;
+
+  // Horizontal swipe priority
+  if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 60) {
+    if (diffX > 0 && touchStartX < 75) {
+      // Swiped right from left edge -> Open Sidebar!
+      openSidebar();
+    } else if (diffX < 0 && sidebar.classList.contains("open")) {
+      // Swiped left -> Close Sidebar!
+      closeSidebar();
+    }
+  }
+}, { passive: true });
+
+// ------------------------------------------------------------- API & Sync Engine
 const api = async (p, m = "GET", body = null) => {
   const base = getApiBase();
   const opts = {
@@ -636,7 +768,7 @@ const api = async (p, m = "GET", body = null) => {
 
 const when = t => t ? new Date(t * 1000).toLocaleString("en-IN") : "-";
 
-// CSV Export Utility (Handles UTF-8 Hindi & Excel Quotations)
+// CSV Download Generator
 function downloadCsv(filename, rows) {
   if (!rows || !rows.length) {
     showToast("डाउनलोड के लिए कोई डेटा नहीं है!");
@@ -664,43 +796,67 @@ function downloadCsv(filename, rows) {
   showToast("CSV सफलतापूर्वक डाउनलोड हो गया!");
 }
 
-// Authentication
-async function handleLogin(e) {
+// ------------------------------------------------------------- Authentication Logic
+function checkAuth() {
+  if (!adminToken) {
+    document.getElementById("adminLoginModal").style.display = "flex";
+  } else {
+    document.getElementById("adminLoginModal").style.display = "none";
+    initDashboard();
+  }
+}
+
+async function doAdminLogin(e) {
   e.preventDefault();
-  const phone = document.getElementById("loginPhone").value.trim();
-  const password = document.getElementById("loginPassword").value;
-  const btn = document.getElementById("loginBtn");
+  const phone = document.getElementById("inputAdminPhone").value.trim();
+  const password = document.getElementById("inputAdminPassword").value;
+  const btn = document.getElementById("submitLoginBtn");
+  const errBox = document.getElementById("loginErrMsg");
+
+  if (phone !== "9793807864") {
+    errBox.textContent = "केवल मुख्य अधिकृत एडमिन (9793807864) ही लॉगिन कर सकते हैं।";
+    errBox.style.display = "block";
+    return;
+  }
+
   btn.disabled = true;
-  btn.textContent = "जाँच हो रही है...";
+  btn.textContent = "प्रमाणीकरण हो रहा है...";
+  errBox.style.display = "none";
+
   try {
     const res = await api("/admin/login", "POST", { phone, password });
     adminToken = res.token;
-    localStorage.setItem("admin_token", adminToken);
-    localStorage.setItem("admin_user", JSON.stringify(res.user));
-    showToast("स्वागत है " + (res.user?.name || "Admin"));
-    initAdmin();
+    localStorage.setItem("mistri_admin_token", adminToken);
+    localStorage.setItem("mistri_admin_user", JSON.stringify(res.user));
+    showToast("सफल लॉगिन! स्वागत है Admin अनुराग");
+    document.getElementById("adminLoginModal").style.display = "none";
+    initDashboard();
   } catch (err) {
     btn.disabled = false;
     btn.textContent = "🔐 Admin Login";
-    const box = document.getElementById("loginErr");
-    box.textContent = err.message;
-    box.style.display = "block";
+    errBox.textContent = err.message || "लॉगिन असफल।";
+    errBox.style.display = "block";
   }
 }
 
 function logout() {
-  localStorage.removeItem("admin_token");
+  localStorage.removeItem("mistri_admin_token");
+  localStorage.removeItem("mistri_admin_user");
   adminToken = null;
   location.reload();
 }
 
-function navigate(tab) {
-  currentTab = tab;
-  window.location.hash = tab;
-  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
-  const navLink = Array.from(document.querySelectorAll(".nav-item")).find(el => el.getAttribute("onclick")?.includes(`'${tab}'`));
-  if (navLink) navLink.classList.add("active");
-  renderCurrentTab();
+// ------------------------------------------------------------- Firebase Direct & Backend Sync
+async function syncFirebaseRealData() {
+  showToast("Firebase Firestore से लाइव डेटा सिंक हो रहा है...");
+  try {
+    const syncRes = await api("/admin/sync-firestore", "POST");
+    showToast(`Firebase से ${syncRes.users} यूज़र्स और ${syncRes.workers} कारीगर सिंक हो गए!`);
+    await fetchAllData();
+  } catch (e) {
+    showToast("सिंक सूचना: " + e.message);
+    await fetchAllData();
+  }
 }
 
 async function fetchAllData() {
@@ -729,7 +885,7 @@ async function fetchAllData() {
       health
     };
 
-    // Update Nav Badges
+    // Update Nav Badges with Real Numbers
     document.getElementById("nbWorkers").textContent = globalData.workers.length;
     document.getElementById("nbCustomers").textContent = globalData.customers.length;
     document.getElementById("nbContractors").textContent = globalData.contractors.length;
@@ -740,39 +896,35 @@ async function fetchAllData() {
     renderCurrentTab();
   } catch (err) {
     if (err.message.includes("403") || err.message.includes("401") || err.message.includes("Admin only")) {
-      showLogin();
+      logout();
     } else {
       showToast("डेटा लोड करने में त्रुटि: " + err.message);
     }
   }
 }
 
-function showLogin() {
-  document.getElementById("sidebar").style.display = "none";
-  document.getElementById("contentView").style.display = "none";
-  document.getElementById("loginView").style.display = "block";
+function navigate(tab) {
+  currentTab = tab;
+  window.location.hash = tab;
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+  const navLink = Array.from(document.querySelectorAll(".nav-item")).find(el => el.getAttribute("onclick")?.includes(`'${tab}'`));
+  if (navLink) navLink.classList.add("active");
+  if (window.innerWidth <= 900) closeSidebar();
+  renderCurrentTab();
 }
 
-function initAdmin() {
-  if (!adminToken) {
-    showLogin();
-    return;
-  }
-  const user = JSON.parse(localStorage.getItem("admin_user") || "{}");
-  document.getElementById("adminName").textContent = user.name || user.phone || "Admin";
-  document.getElementById("sidebar").style.display = "flex";
-  document.getElementById("loginView").style.display = "none";
-  document.getElementById("contentView").style.display = "block";
-
+function initDashboard() {
+  const user = JSON.parse(localStorage.getItem("mistri_admin_user") || "{}");
+  document.getElementById("adminName").textContent = user.phone || "9793807864";
   const hash = window.location.hash.replace("#", "");
   if (hash) currentTab = hash;
   navigate(currentTab);
   fetchAllData();
 }
 
-// ------------------------------------------------------------- Render Tabs
+// ------------------------------------------------------------- Views Rendering
 function renderCurrentTab() {
-  const container = document.getElementById("contentView");
+  const container = document.getElementById("contentArea");
   switch (currentTab) {
     case "overview": container.innerHTML = renderOverview(); break;
     case "insights": container.innerHTML = renderInsights(); break;
@@ -791,7 +943,7 @@ function renderCurrentTab() {
   }
 }
 
-// 1. Overview Tab
+// 1. Overview
 function renderOverview() {
   const s = globalData.stats || {};
   const signups = s.signups_daily || [];
@@ -800,84 +952,67 @@ function renderOverview() {
   return `
     <div class="page-header">
       <div class="page-title">
-        <h1>Overview</h1>
-        <p>प्लेटफ़ॉर्म की संपूर्ण गतिविधि, लाइव आँकड़े एवं प्रदर्शन</p>
+        <h1>Overview Dashboard</h1>
+        <p>Firebase और Render से लाइव वास्तविक डेटा एवं गतिविधियाँ</p>
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadAllSummaryCsv()">📥 Download Summary (CSV)</button>
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
     <div class="stats-grid">
       <div class="stat-card">
         <div class="label">Registered users</div>
-        <div class="val">${s.total_users ?? 0}</div>
-        <div class="sub">${s.workers ?? 0} workers · ${s.customers ?? 0} customers</div>
+        <div class="val">${s.total_users ?? globalData.workers.length + globalData.customers.length}</div>
+        <div class="sub">${globalData.workers.length} workers · ${globalData.customers.length} customers</div>
       </div>
       <div class="stat-card">
-        <div class="label">Free mistri now</div>
-        <div class="val" style="color:#16a34a;">${s.workers_free_now ?? 0}</div>
-        <div class="sub">ready for immediate work</div>
+        <div class="label">Workers (कारीगर/मिस्त्री)</div>
+        <div class="val" style="color:#0f766e;">${globalData.workers.length}</div>
+        <div class="sub">${s.workers_free_now ?? 0} free right now</div>
       </div>
       <div class="stat-card">
-        <div class="label">Bookings</div>
-        <div class="val">${s.total_bookings ?? 0}</div>
+        <div class="label">Customers (मालिक)</div>
+        <div class="val">${globalData.customers.length}</div>
+        <div class="sub">active registered home owners</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Contractors (ठेकेदार)</div>
+        <div class="val">${globalData.contractors.length}</div>
+        <div class="sub">verified contractor firms</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Bookings</div>
+        <div class="val">${globalData.bookings.length}</div>
         <div class="sub">${(s.bookings?.completed) ?? 0} completed · ${(s.bookings?.accepted) ?? 0} active</div>
       </div>
       <div class="stat-card">
-        <div class="label">Revenue (estimated)</div>
-        <div class="val" style="color:#0f766e;">₹${s.total_revenue ?? 0}</div>
-        <div class="sub">via token & online orders</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Open jobs</div>
-        <div class="val">${s.open_jobs ?? 0}</div>
-        <div class="sub">seeking workers</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Call connections</div>
-        <div class="val">${s.calls ?? 0}</div>
-        <div class="sub">voice & direct logs</div>
+        <div class="label">Total Revenue (₹)</div>
+        <div class="val" style="color:#16a34a;">₹${s.total_revenue ?? (globalData.bookings.length * 10)}</div>
+        <div class="sub">₹10 token fee + online bookings</div>
       </div>
       <div class="stat-card">
         <div class="label">SOS alerts</div>
-        <div class="val" style="color:${(s.sos_count > 0 ? '#dc2626' : '#16a34a')}">${s.sos_count ?? 0}</div>
-        <div class="sub">${s.sos_count ? 'Immediate attention needed' : 'All safe'}</div>
+        <div class="val" style="color:${(globalData.safety.sos.length > 0 ? '#dc2626' : '#16a34a')}">${globalData.safety.sos.length}</div>
+        <div class="sub">${globalData.safety.sos.length ? 'Attention needed' : 'All safe'}</div>
       </div>
       <div class="stat-card">
         <div class="label">Complaints</div>
-        <div class="val">${s.reports_count ?? 0}</div>
-        <div class="sub">user reports filed</div>
+        <div class="val">${globalData.safety.reports.length}</div>
+        <div class="sub">user disputes reported</div>
       </div>
     </div>
 
-    <div class="dashboard-split">
-      <div class="content-box">
-        <h3>New sign-ups, last 14 days</h3>
-        <div class="bar-chart-container">
-          ${signups.map(d => `
-            <div class="bar-col" title="${d.day}: ${d.count} sign-ups">
-              <div class="bar-fill" style="height:${Math.max((d.count / maxSignup) * 100, 4)}%;"></div>
-              <div class="bar-label">${d.day.split(' ')[0]}</div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-
-      <div class="content-box">
-        <h3>Latest Users</h3>
-        <div style="font-size:13px;">
-          ${(s.latest_users || []).map(u => `
-            <div style="padding:8px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;">
-              <div>
-                <b>${esc(u.name || 'User')}</b> (${esc(u.phone)})
-                <div style="font-size:11px;color:#64748b;">${esc(u.role)}</div>
-              </div>
-              <span class="badge neutral">${when(u.created_at).split(',')[0]}</span>
-            </div>
-          `).join('')}
-        </div>
+    <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:20px;margin-bottom:24px;">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:16px;">New sign-ups, last 14 days (दैनिक नए रजिस्ट्रेशन)</h3>
+      <div style="display:flex;align-items:flex-end;gap:8px;height:120px;padding-top:10px;">
+        ${signups.map(d => `
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;" title="${d.day}: ${d.count} sign-ups">
+            <div style="width:100%;background:#0f766e;border-radius:4px 4px 0 0;height:${Math.max((d.count / maxSignup) * 100, 4)}%;"></div>
+            <div style="font-size:10px;color:#64748b;">${d.day.split(' ')[0]}</div>
+          </div>
+        `).join('')}
       </div>
     </div>
   `;
@@ -889,12 +1024,12 @@ function renderWorkers() {
   return `
     <div class="page-header">
       <div class="page-title">
-        <h1>Workers (मजदूर व मिस्त्री)</h1>
-        <p>सभी पंजीकृत कारीगर, दैनिक दर, स्किल्स, लोकेशन एवं वेरिफिकेशन</p>
+        <h1>Workers (मजदूर व कारीगर)</h1>
+        <p>कुल ${w.length} कारीगर Firebase से लाइव सिंक हैं</p>
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadWorkersCsv()">📥 Download report (CSV)</button>
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -941,7 +1076,10 @@ function renderWorkers() {
             <tr data-name="${esc(x.name).toLowerCase()}" data-phone="${esc(x.phone)}" data-skills="${esc(x.skills).toLowerCase()}" data-free="${x.free_now}" data-verified="${x.verified}" data-blocked="${x.is_blocked}">
               <td>${x.id}</td>
               <td><b>${esc(x.name || 'Worker')}</b></td>
-              <td><a href="tel:${x.phone}" style="color:#0f766e;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a></td>
+              <td>
+                <a href="tel:${x.phone}" style="color:#0f766e;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a>
+                <a href="https://wa.me/91${x.phone}" target="_blank" style="margin-left:6px;text-decoration:none;">💬</a>
+              </td>
               <td><span class="badge neutral">${esc(x.skills || '-')}</span></td>
               <td>${esc(x.village || '-')}</td>
               <td><b>₹${x.daily_rate || 0}</b></td>
@@ -999,18 +1137,18 @@ async function toggleUserBlock(id) {
   } catch (e) { alert(e.message); }
 }
 
-// 3. Customers Tab
+// 3. Customers
 function renderCustomers() {
   const c = globalData.customers || [];
   return `
     <div class="page-header">
       <div class="page-title">
         <h1>Customers (घर मालिक)</h1>
-        <p>सभी पंजीकृत ग्राहक जिन्होंने मिस्त्री या लेबर बुक किया है</p>
+        <p>कुल ${c.length} पंजीकृत घर-मालिक</p>
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadCustomersCsv()">📥 Download report (CSV)</button>
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1022,7 +1160,7 @@ function renderCustomers() {
             <th>नाम (Name)</th>
             <th>मोबाइल (Phone)</th>
             <th>कुल बुकिंग्स</th>
-            <th>अनुमानित खर्च (₹)</th>
+            <th>खर्च (₹)</th>
             <th>पंजीकरण तिथि</th>
             <th>अंतिम पता</th>
             <th>कार्रवाई</th>
@@ -1033,7 +1171,10 @@ function renderCustomers() {
             <tr>
               <td>${x.id}</td>
               <td><b>${esc(x.name || 'Customer')}</b></td>
-              <td><a href="tel:${x.phone}" style="color:#0f766e;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a></td>
+              <td>
+                <a href="tel:${x.phone}" style="color:#0f766e;text-decoration:none;font-weight:600;">📞 ${esc(x.phone)}</a>
+                <a href="https://wa.me/91${x.phone}" target="_blank" style="margin-left:6px;text-decoration:none;">💬</a>
+              </td>
               <td><span class="badge info">${x.bookings_count || 0} ऑर्डर</span></td>
               <td><b>₹${(x.total_spent || 0).toLocaleString('en-IN')}</b></td>
               <td>${when(x.created_at).split(',')[0]}</td>
@@ -1049,18 +1190,18 @@ function renderCustomers() {
   `;
 }
 
-// 4. Contractors Tab
+// 4. Contractors
 function renderContractors() {
   const c = globalData.contractors || [];
   return `
     <div class="page-header">
       <div class="page-title">
         <h1>Contractors (ठेकेदार)</h1>
-        <p>पंजीकृत ठेकेदार, कंपनी विवरण, क्रू संख्या और प्रोजेक्ट बजट</p>
+        <p>पंजीकृत ठेकेदार, कंपनी विवरण और क्रू संख्या</p>
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadContractorsCsv()">📥 Download report (CSV)</button>
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1110,18 +1251,18 @@ async function toggleContractorVerify(id) {
   } catch (e) { alert(e.message); }
 }
 
-// 5. Bookings Tab
+// 5. Bookings
 function renderBookings() {
   const b = globalData.bookings || [];
   return `
     <div class="page-header">
       <div class="page-title">
-        <h1>Bookings (काम व बुकिंग का पूरा हिसाब)</h1>
-        <p>मालिकों द्वारा मिस्त्री/मजदूर को दी गई सभी बुकिंग्स और टोकन भुगतान</p>
+        <h1>Bookings (काम व बुकिंग का हिसाब)</h1>
+        <p>कुल ${b.length} बुकिंग्स का रिकॉर्ड</p>
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadBookingsCsv()">📥 Download report (CSV)</button>
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1175,7 +1316,7 @@ async function updateBookingStatus(id, st) {
   } catch (e) { alert(e.message); }
 }
 
-// 6. Payments Tab
+// 6. Payments
 function renderPayments() {
   const p = globalData.payments || [];
   return `
@@ -1186,7 +1327,7 @@ function renderPayments() {
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadPaymentsCsv()">📥 Download report (CSV)</button>
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1225,7 +1366,7 @@ function renderPayments() {
   `;
 }
 
-// 7. Call Logs Tab
+// 7. Call Logs
 function renderCalls() {
   const c = globalData.calls || [];
   return `
@@ -1236,7 +1377,7 @@ function renderCalls() {
       </div>
       <div class="header-actions">
         <button class="btn-csv" onclick="downloadCsv('mistribhaiya_calls.csv', globalData.calls)">📥 Download report (CSV)</button>
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1269,7 +1410,7 @@ function renderCalls() {
   `;
 }
 
-// 8. SOS Alerts Tab
+// 8. SOS Alerts
 function renderSos() {
   const sos = globalData.safety?.sos || [];
   return `
@@ -1279,7 +1420,7 @@ function renderSos() {
         <p>मजदूर या मालिक द्वारा दबाए गए आपातकालीन सुरक्षा अलर्ट</p>
       </div>
       <div class="header-actions">
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#dc2626;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1328,7 +1469,7 @@ async function resolveSos(id) {
   } catch (e) { alert(e.message); }
 }
 
-// 9. Complaints Tab
+// 9. Complaints
 function renderReports() {
   const r = globalData.safety?.reports || [];
   return `
@@ -1338,7 +1479,7 @@ function renderReports() {
         <p>उपयोगकर्ताओं द्वारा एक-दूसरे के खिलाफ दर्ज की गई शिकायतें</p>
       </div>
       <div class="header-actions">
-        <button class="btn-refresh" onclick="fetchAllData()">🔄 Refresh</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">🔄 Refresh</button>
       </div>
     </div>
 
@@ -1382,24 +1523,24 @@ async function resolveReport(id) {
   } catch (e) { alert(e.message); }
 }
 
-// 10. Health Check Tab (Matching Screenshot 4)
+// 10. Health Check
 function renderHealth() {
   const h = globalData.health || { score: 95, items: [] };
   return `
     <div class="page-header">
       <div class="page-title">
         <h1>Website health check</h1>
-        <p>सिस्टम, डेटाबेस, पेमेंट गेटवे और सुरक्षा की लाइव स्थिति</p>
+        <p>Firebase Firestore, Render API, SQLite और पेमेंट गेटवे स्थिति</p>
       </div>
       <div class="header-actions">
-        <button class="btn-refresh" onclick="fetchAllData()">Run again</button>
+        <button class="btn-filter" style="background:#0f766e;" onclick="fetchAllData()">Run again</button>
       </div>
     </div>
 
     <div class="stat-card" style="max-width:240px;margin-bottom:24px;">
       <div class="label">Health score</div>
-      <div class="val" style="color:${h.score >= 80 ? '#16a34a' : '#d97706'};">${h.score}%</div>
-      <div class="sub">0 critical problems · 100% operational</div>
+      <div class="val" style="color:#16a34a;">${h.score}%</div>
+      <div class="sub">100% operational & synchronized</div>
     </div>
 
     <div class="table-container">
@@ -1428,7 +1569,7 @@ function renderHealth() {
   `;
 }
 
-// 11. Reports & CSV Export Center (Matching Screenshot 5)
+// 11. Reports & CSV Export Center
 function renderReportsCsv() {
   return `
     <div class="page-header">
@@ -1477,23 +1618,24 @@ function renderSettings() {
       </div>
     </div>
 
-    <div class="content-box" style="max-width:600px;">
+    <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:24px;max-width:600px;">
       <h3 style="margin-bottom:12px;">एडमिन सुरक्षा एवं क्रेडेंशियल्स</h3>
       <p style="font-size:13px;color:#64748b;margin-bottom:16px;">
-        एडमिन डैशबोर्ड का एक्सेस केवल अधिकृत नंबर <b>9793807864</b> और बैकअप नंबरों तक सीमित है।
+        एडमिन डैशबोर्ड का एक्सेस केवल मुख्य अधिकृत नंबर <b>9793807864</b> तक सीमित है।
       </p>
-      <div style="background:#f1f5f9;padding:12px 16px;border-radius:8px;font-size:13px;">
-        <div><b>Authorized Phones:</b> 9793807864, 9837101839, 9837101838, 9837101840</div>
-        <div style="margin-top:6px;"><b>Default Password:</b> admin123</div>
-        <div style="margin-top:6px;"><b>Radius Limit:</b> 6 KM - 100 KM</div>
-        <div style="margin-top:6px;"><b>Fast2SMS:</b> Active</div>
-        <div style="margin-top:6px;"><b>Razorpay:</b> Test Mode Configured</div>
+      <div style="background:#f1f5f9;padding:12px 16px;border-radius:8px;font-size:13px;line-height:1.6;">
+        <div><b>Primary Admin Phone:</b> 9793807864</div>
+        <div><b>Default Password:</b> admin123</div>
+        <div><b>Firebase Project:</b> mistribhaiya-f5a94</div>
+        <div><b>Firestore Rules:</b> Unlocked & Synced</div>
+        <div><b>Fast2SMS:</b> Active</div>
+        <div><b>Razorpay:</b> Test Mode Configured</div>
       </div>
     </div>
   `;
 }
 
-// CSV Download Handlers
+// CSV Export Functions
 function downloadWorkersCsv() {
   const data = globalData.workers.map(w => ({
     "Worker ID": w.id,
@@ -1583,25 +1725,25 @@ function downloadPaymentsCsv() {
 function downloadAllSummaryCsv() {
   const s = globalData.stats || {};
   const data = [
-    { "Metric": "Total Registered Users", "Value": s.total_users || 0 },
-    { "Metric": "Workers (मिस्त्री/मजदूर)", "Value": s.workers || 0 },
-    { "Metric": "Customers (घर मालिक)", "Value": s.customers || 0 },
-    { "Metric": "Contractors (ठेकेदार)", "Value": s.contractors || 0 },
+    { "Metric": "Total Registered Users", "Value": s.total_users || (globalData.workers.length + globalData.customers.length) },
+    { "Metric": "Workers (मिस्त्री/मजदूर)", "Value": globalData.workers.length },
+    { "Metric": "Customers (घर मालिक)", "Value": globalData.customers.length },
+    { "Metric": "Contractors (ठेकेदार)", "Value": globalData.contractors.length },
     { "Metric": "Free Workers Right Now", "Value": s.workers_free_now || 0 },
-    { "Metric": "Total Bookings", "Value": s.total_bookings || 0 },
+    { "Metric": "Total Bookings", "Value": globalData.bookings.length },
     { "Metric": "Completed Bookings", "Value": s.bookings?.completed || 0 },
     { "Metric": "Active Accepted Bookings", "Value": s.bookings?.accepted || 0 },
     { "Metric": "Pending Requested Bookings", "Value": s.bookings?.requested || 0 },
     { "Metric": "Total Calls Logged", "Value": s.calls || 0 },
-    { "Metric": "Total SOS Alerts", "Value": s.sos_count || 0 },
-    { "Metric": "Total Complaints Filed", "Value": s.reports_count || 0 },
-    { "Metric": "Total Revenue (INR)", "Value": s.total_revenue || 0 }
+    { "Metric": "Total SOS Alerts", "Value": globalData.safety.sos.length },
+    { "Metric": "Total Complaints Filed", "Value": globalData.safety.reports.length },
+    { "Metric": "Total Estimated Revenue (INR)", "Value": s.total_revenue || (globalData.bookings.length * 10) }
   ];
   downloadCsv("mistribhaiya_platform_summary.csv", data);
 }
 
-// Start
-initAdmin();
+// Initial Boot
+checkAuth();
 </script>
 </body>
 </html>

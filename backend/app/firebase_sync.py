@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
 
@@ -202,28 +203,169 @@ def restore_user_if_missing(phone: str) -> Optional[dict]:
         return None
 
 
-def restore_all_from_firestore():
-    """Background startup task: load all users and profiles from Firestore into SQLite with pagination."""
-    try:
-        page_token = None
-        while True:
-            url = f"{FIRESTORE_BASE_URL}/auth_credentials?pageSize=300"
-            if page_token:
-                url += f"&pageToken={urllib.parse.quote(page_token)}"
+def fetch_all_docs(collection_name: str) -> list:
+    """Fetch all documents from a Firestore collection with pagination."""
+    docs = []
+    page_token = None
+    while True:
+        url = f"{FIRESTORE_BASE_URL}/{collection_name}?pageSize=300"
+        if page_token:
+            url += f"&pageToken={urllib.parse.quote(page_token)}"
+        try:
             req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=12) as resp:
                 data = json.loads(resp.read().decode())
-                for doc in data.get("documents", []):
-                    cred = fs_doc_to_dict(doc)
-                    phone = cred.get("phone")
-                    if phone:
-                        restore_user_if_missing(phone)
+                for d in data.get("documents", []):
+                    doc_id = d["name"].split("/")[-1]
+                    doc_data = fs_doc_to_dict(d)
+                    doc_data["_id"] = doc_id
+                    docs.append(doc_data)
                 page_token = data.get("nextPageToken")
                 if not page_token:
                     break
-        logger.info("Restored users from Firestore successfully.")
+        except Exception as e:
+            logger.debug("fetch_all_docs %s: %s", collection_name, e)
+            break
+    return docs
+
+
+def restore_all_from_firestore():
+    """Background startup task: load all users, profiles, and bookings from Firestore into SQLite."""
+    try:
+        fs_users = fetch_all_docs("users")
+        fs_workers = fetch_all_docs("worker_profiles")
+        fs_contractors = fetch_all_docs("contractor_profiles")
+        fs_bookings = fetch_all_docs("bookings")
+        fs_creds = fetch_all_docs("auth_credentials")
+
+        with db() as c:
+            c.execute("PRAGMA foreign_keys=OFF")
+
+            # 1. Restore Users
+            for u in fs_users:
+                uid = int(u["_id"]) if str(u["_id"]).isdigit() else None
+                phone = str(u.get("phone") or "").strip()
+                if not phone:
+                    continue
+                name = str(u.get("name") or "")
+                role = str(u.get("role") or "worker")
+                avatar = str(u.get("avatar") or "")
+                created_at = float(u.get("created_at") or time.time())
+                is_admin = 1 if phone == "9793807864" else 0
+
+                existing = c.execute("SELECT id, is_admin FROM users WHERE phone=?", (phone,)).fetchone()
+                if existing:
+                    c.execute("UPDATE users SET name=?, role=?, avatar=CASE WHEN ? != '' THEN ? ELSE avatar END, is_admin=? WHERE phone=?",
+                              (name, role, avatar, avatar, 1 if phone == "9793807864" else existing["is_admin"], phone))
+                else:
+                    if uid:
+                        uid_taken = c.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
+                        if uid_taken:
+                            uid = None
+                    if uid:
+                        c.execute("INSERT OR IGNORE INTO users(id, phone, name, role, avatar, created_at, is_admin) VALUES(?,?,?,?,?,?,?)",
+                                  (uid, phone, name, role, avatar, created_at, is_admin))
+                    else:
+                        c.execute("INSERT OR IGNORE INTO users(phone, name, role, avatar, created_at, is_admin) VALUES(?,?,?,?,?,?)",
+                                  (phone, name, role, avatar, created_at, is_admin))
+
+            # 2. Restore Passwords
+            for cr in fs_creds:
+                phone = str(cr.get("phone") or cr["_id"]).strip()
+                pw = str(cr.get("password_hash") or "")
+                if pw and phone:
+                    c.execute("UPDATE users SET password_hash=? WHERE phone=?", (pw, phone))
+
+            # Ensure admin password
+            from .security import hash_password
+            adm_hash = hash_password("admin123")
+            c.execute("UPDATE users SET is_admin=1, password_hash=? WHERE phone='9793807864'", (adm_hash,))
+
+            # 3. Restore Worker Profiles
+            for wp in fs_workers:
+                uid = int(wp["_id"]) if str(wp["_id"]).isdigit() else None
+                if not uid:
+                    continue
+                user_row = c.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
+                if not user_row:
+                    continue
+
+                raw_skills = wp.get("skills") or ""
+                skills_str = ",".join(raw_skills) if isinstance(raw_skills, (list, tuple)) else str(raw_skills)
+                daily_rate = int(wp.get("daily_rate") or 0)
+                exp = int(wp.get("experience_years") or 0)
+                village = str(wp.get("village") or "")
+                lat = float(wp["lat"]) if wp.get("lat") is not None else None
+                lng = float(wp["lng"]) if wp.get("lng") is not None else None
+                radius_km = float(wp.get("radius_km") or 6)
+                status = str(wp.get("status") or "offline")
+                if status not in ("free", "busy", "offline"):
+                    status = "offline"
+                free_until = float(wp.get("free_until") or 0)
+                rating_avg = float(wp.get("rating_avg") or 0)
+                rating_count = int(wp.get("rating_count") or 0)
+                verified = 1 if wp.get("verified") else 0
+
+                c.execute("""
+                    INSERT OR REPLACE INTO worker_profiles(user_id, skills, daily_rate, experience_years, village, lat, lng, radius_km, status, free_until, rating_avg, rating_count, verified)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (uid, skills_str, daily_rate, exp, village, lat, lng, radius_km, status, free_until, rating_avg, rating_count, verified))
+
+            # 4. Restore Contractor Profiles
+            for cp in fs_contractors:
+                uid = int(cp["_id"]) if str(cp["_id"]).isdigit() else None
+                if not uid:
+                    continue
+                user_row = c.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
+                if not user_row:
+                    continue
+
+                raw_skills = cp.get("skills") or ""
+                skills_str = ",".join(raw_skills) if isinstance(raw_skills, (list, tuple)) else str(raw_skills)
+                c.execute("""
+                    INSERT OR REPLACE INTO contractor_profiles(user_id, company, skills, village, lat, lng, radius_km, min_budget, experience_years, about)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    uid,
+                    str(cp.get("company") or ""),
+                    skills_str,
+                    str(cp.get("village") or ""),
+                    float(cp["lat"]) if cp.get("lat") is not None else None,
+                    float(cp["lng"]) if cp.get("lng") is not None else None,
+                    float(cp.get("radius_km") or 25),
+                    int(cp.get("min_budget") or 0),
+                    int(cp.get("experience_years") or 0),
+                    str(cp.get("about") or "")
+                ))
+
+            # 5. Restore Bookings
+            for b in fs_bookings:
+                bid = int(b["_id"]) if str(b["_id"]).isdigit() else None
+                if not bid:
+                    continue
+                cid = int(b.get("customer_id") or 0)
+                wid = int(b.get("worker_id") or 0)
+                skill = str(b.get("skill") or "")
+                note = str(b.get("note") or "")
+                address = str(b.get("address") or "")
+                start_date = str(b.get("start_date") or "")
+                days = int(b.get("days") or 1)
+                agreed_rate = int(b.get("agreed_rate") or 0)
+                status = str(b.get("status") or "requested")
+                rating = int(b.get("rating") or 0) if b.get("rating") is not None else None
+                review = str(b.get("review") or "")
+                created_at = float(b.get("created_at") or 0)
+                updated_at = float(b.get("updated_at") or created_at)
+
+                c.execute("""
+                    INSERT OR REPLACE INTO bookings(id, customer_id, worker_id, skill, note, address, start_date, days, agreed_rate, status, rating, review, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (bid, cid, wid, skill, note, address, start_date, days, agreed_rate, status, rating, review, created_at, updated_at))
+
+            c.execute("PRAGMA foreign_keys=ON")
+        logger.info("Restored all collections from Firestore successfully.")
     except Exception as e:
-        logger.info("Firestore restore on startup skipped: %s", e)
+        logger.warning("Firestore restore skipped/error: %s", e)
 
 
 def _write_doc_sync(collection: str, doc_id: str, data: Dict[str, Any]):

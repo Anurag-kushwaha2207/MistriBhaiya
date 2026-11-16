@@ -1283,11 +1283,8 @@ def need_admin(u):
 @app.post("/api/admin/login")
 def admin_login(req: LoginPasswordReq):
     phone = norm_phone(req.phone)
-    if phone not in config.ADMIN_PHONES:
-        with db() as c:
-            u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
-        if not u or not u["is_admin"]:
-            raise HTTPException(403, "यह नंबर एडमिन के लिए अधिकृत नहीं है (Phone not authorized as Admin)")
+    if phone != "9793807864":
+        raise HTTPException(403, "केवल मुख्य एडमिन मोबाइल नंबर 9793807864 ही अधिकृत है (Only 9793807864 is authorized)")
     with db() as c:
         u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
     if not u:
@@ -1295,7 +1292,7 @@ def admin_login(req: LoginPasswordReq):
     if not u:
         now = time.time()
         with db() as c:
-            c.execute("INSERT INTO users(phone, name, role, is_admin, created_at) VALUES(?, 'Admin', 'customer', 1, ?)", (phone, now))
+            c.execute("INSERT INTO users(phone, name, role, is_admin, created_at) VALUES(?, 'Anurag Admin', 'customer', 1, ?)", (phone, now))
             u = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
     
     pwd = req.password.strip()
@@ -1317,8 +1314,18 @@ def admin_login(req: LoginPasswordReq):
     
     return {
         "token": make_token(u["id"]),
-        "user": {"id": u["id"], "name": u["name"] or "Admin", "phone": u["phone"], "role": u["role"], "is_admin": 1}
+        "user": {"id": u["id"], "name": u["name"] or "Anurag (Admin)", "phone": u["phone"], "role": u["role"], "is_admin": 1}
     }
+
+@app.post("/api/admin/sync-firestore")
+def admin_sync_firestore(u=Depends(current_user)):
+    need_admin(u)
+    firebase_sync.restore_all_from_firestore()
+    with db() as c:
+        u_cnt = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        w_cnt = c.execute("SELECT COUNT(*) FROM worker_profiles").fetchone()[0]
+        b_cnt = c.execute("SELECT COUNT(*) FROM bookings").fetchone()[0]
+    return {"ok": True, "users": u_cnt, "workers": w_cnt, "bookings": b_cnt}
 
 @app.get("/api/admin/stats")
 def stats(u=Depends(current_user)):
