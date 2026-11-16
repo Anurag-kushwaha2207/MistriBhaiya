@@ -3,7 +3,33 @@ import React from 'react';
 export default function Header({ lang, onToggleLang, user, onOpenProfile, unreadNotifs = 0, onOpenNotifs, t }) {
   return (
     <header id="top">
-      <span className="brand">🏗️ MistriBhaiya</span>
+      {user?.role === 'worker' ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+          <div
+            style={{
+              width: '35px',
+              height: '35px',
+              borderRadius: '9px',
+              background: '#FFC32C',
+              color: '#196126',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.15)'
+            }}
+          >
+            <i className="fa-solid fa-hard-hat" style={{ fontSize: '17px' }}></i>
+          </div>
+          <div>
+            <div style={{ fontWeight: '800', fontSize: '16.5px', lineHeight: '1.15', color: '#fff' }}>MistriBhaiya</div>
+            <div style={{ fontSize: '9px', color: '#bbf7d0', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '700' }}>
+              WORKER PARTNER
+            </div>
+          </div>
+        </div>
+      ) : (
+        <span className="brand">🏗️ MistriBhaiya</span>
+      )}
       <span id="topright">
         <button
           className="sec"
@@ -67,7 +93,7 @@ export default function Header({ lang, onToggleLang, user, onOpenProfile, unread
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '2px solid rgba(255, 255, 255, 0.6)',
+              border: user?.role === 'worker' ? '2.5px solid #FFC32C' : '2px solid rgba(255, 255, 255, 0.6)',
               background: '#fff',
               overflow: 'hidden',
               cursor: 'pointer',
