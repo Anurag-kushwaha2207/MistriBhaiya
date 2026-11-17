@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -75,6 +75,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Pass through standard HTTPExceptions
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers={
+                "Access-Control-Allow-Origin": request.headers.get("origin") or "*",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Allow-Headers": "Content-Type,Authorization"
+            }
+        )
+    logger.exception(f"Unhandled server error on {request.method} {request.url.path}: {exc}")
+    origin = request.headers.get("origin") or "*"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"सर्वर त्रुटि (Server Error): {str(exc)}"},
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization"
+        }
+    )
 
 init_db()   # idempotent: creates tables if missing
 threading.Thread(target=firebase_sync.restore_all_from_firestore, daemon=True).start()
@@ -242,27 +267,32 @@ def request_otp(req: OtpReq):
 def check_phone(req: CheckPhoneReq):
     phone = norm_phone(req.phone)
     with db() as c:
-        u = c.execute("SELECT id, name, role, phone, password_hash FROM users WHERE phone=?", (phone,)).fetchone()
+        u = c.execute("SELECT id, name, role, phone, password_hash, is_deleted FROM users WHERE phone=?", (phone,)).fetchone()
     if not u:
         u = firebase_sync.restore_user_if_missing(phone)
     if u:
+        u_dict = dict(u)
+        if u_dict.get("is_deleted"):
+            return {"exists": False}
         return {
             "exists": True,
-            "name": u["name"] or "",
-            "role": u["role"],
-            "has_password": bool(u["password_hash"]),
+            "name": u_dict.get("name") or "",
+            "role": u_dict.get("role"),
+            "has_password": bool(u_dict.get("password_hash")),
         }
     return {"exists": False}
 
 def get_user_profile(c, u):
     prof = {}
-    if u["role"] == "worker":
-        wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
+    u_role = u["role"] if isinstance(u, dict) else u["role"]
+    u_id = u["id"] if isinstance(u, dict) else u["id"]
+    if u_role == "worker":
+        wp = c.execute("SELECT * FROM worker_profiles WHERE user_id=?", (u_id,)).fetchone()
         if wp:
-            st = effective_status(wp, busy_ranges(c, [u["id"]])[u["id"]], today(), time.time())
+            st = effective_status(wp, busy_ranges(c, [u_id])[u_id], today(), time.time())
             prof = {**worker_public(u, wp, st), "lat": wp["lat"], "lng": wp["lng"]}
-    elif u["role"] == "contractor":
-        cp = c.execute("SELECT * FROM contractor_profiles WHERE user_id=?", (u["id"],)).fetchone()
+    elif u_role == "contractor":
+        cp = c.execute("SELECT * FROM contractor_profiles WHERE user_id=?", (u_id,)).fetchone()
         prof = dict(cp) if cp else {}
     return prof
 
@@ -279,18 +309,19 @@ def login_password(req: LoginPasswordReq, request: Request):
         u = firebase_sync.restore_user_if_missing(phone)
     if not u:
         raise HTTPException(404, "अकाउंट नहीं मिला। कृपया पहले रजिस्टर करें। (Account not found. Please register first.)")
-    if u.get("is_deleted"):
+    u_dict = dict(u)
+    if u_dict.get("is_deleted"):
         raise HTTPException(403, "यह अकाउंट एडमिन द्वारा हटा दिया गया है। (This account has been deleted)")
-    if not u["password_hash"]:
+    if not u_dict.get("password_hash"):
         raise HTTPException(400, "इस नंबर पर पासवर्ड सेट नहीं है। कृपया OTP से लॉगिन करें या 'पासवर्ड भूल गए' से नया पासवर्ड बनाएं।")
-    if not verify_password(req.password, u["password_hash"]):
+    if not verify_password(req.password, u_dict["password_hash"]):
         record_failure("pw_fail:" + phone)
         record_failure("pw_fail_ip:" + client_ip)
         raise HTTPException(400, "गलत पासवर्ड (Incorrect password)")
     clear_failures("pw_fail:" + phone)
     with db() as c:
-        prof = get_user_profile(c, u)
-    return {"token": make_token(u["id"]), "user": user_public(dict(u)), "profile": prof}
+        prof = get_user_profile(c, u_dict)
+    return {"token": make_token(u_dict["id"]), "user": user_public(u_dict), "profile": prof}
 
 @app.post("/api/auth/forgot-password")
 @app.post("/api/auth/reset-password")

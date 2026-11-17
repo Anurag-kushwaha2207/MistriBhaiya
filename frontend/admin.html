@@ -758,8 +758,25 @@ const api = async (p, m = "GET", body = null) => {
     }
   };
   if (body) opts.body = JSON.stringify(body);
-  const r = await fetch((base ? base : "") + "/api" + p, opts);
+  let r;
+  try {
+    r = await fetch((base ? base : "") + "/api" + p, opts);
+  } catch (netErr) {
+    throw new Error("सर्वर से संपर्क नहीं हो पा रहा (Network Error). Render सर्वर जाग रहा है, कृपया 5 सेकंड प्रतीक्षा करें।");
+  }
   if (!r.ok) {
+    if (r.status === 401 || r.status === 403) {
+      localStorage.removeItem("mistri_admin_token");
+      localStorage.removeItem("mistri_admin_user");
+      adminToken = null;
+      document.getElementById("adminLoginModal").style.display = "flex";
+      const errBox = document.getElementById("loginErrMsg");
+      if (errBox) {
+        errBox.textContent = "एडमिन सत्र समाप्त (Session expired)। कृपया एडमिन पासवर्ड (admin123) से पुनः लॉगिन करें।";
+        errBox.style.display = "block";
+      }
+      throw new Error("Session expired (401). Please log in again.");
+    }
     const err = await r.json().catch(() => ({ detail: r.statusText }));
     throw new Error(err.detail || ("HTTP " + r.status));
   }
@@ -862,9 +879,13 @@ async function syncFirebaseRealData() {
 let adminSettings = { booking_token_fee: 10 };
 
 async function fetchAllData(silent = false) {
+  if (!adminToken) return;
   try {
-    const [stats, workers, customers, contractors, bookings, payments, calls, safety, health, settings] = await Promise.all([
-      api("/admin/stats").catch(() => null),
+    // Primary auth & stats call: if this fails with 401, user will be logged out cleanly
+    const stats = await api("/admin/stats");
+
+    // Fetch remaining resources in parallel
+    const [workers, customers, contractors, bookings, payments, calls, safety, health, settings] = await Promise.all([
       api("/admin/workers").catch(() => ({ workers: [] })),
       api("/admin/customers").catch(() => ({ customers: [] })),
       api("/admin/contractors").catch(() => ({ contractors: [] })),

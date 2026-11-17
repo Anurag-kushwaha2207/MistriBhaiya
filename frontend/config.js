@@ -16,6 +16,12 @@
     localStorage.setItem("mistri_api_base", stored);
   }
 
+  // Clear stale localhost or non-https API base when running on production HTTPS hosting
+  if (!isLocal && stored && (stored.includes("localhost") || stored.includes("127.0.0.1") || stored.startsWith("http:"))) {
+    localStorage.removeItem("mistri_api_base");
+    stored = null;
+  }
+
   if (stored) {
     window.MISTRI_API_BASE = stored;
   } else if (isLocal) {

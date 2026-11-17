@@ -23,7 +23,10 @@ export async function api(path, method = "GET", body = null, token = null, onAut
       break;
     } catch (err) {
       if (attempts >= maxAttempts) {
-        throw new Error(err.message || "Failed to fetch. Server might be waking up.");
+        const msg = (err.message === "Failed to fetch" || !err.message)
+          ? "सर्वर से संपर्क नहीं हो सका (सर्वर शुरू हो रहा है, 5 सेकंड बाद पुनः प्रयास करें)"
+          : err.message;
+        throw new Error(msg);
       }
       // Wait 2.5s before retrying for cold starts
       await new Promise(res => setTimeout(res, 2500));
