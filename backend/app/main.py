@@ -1518,6 +1518,190 @@ def admin_delete_user(uid: int, u=Depends(current_user)):
     firebase_sync.delete_user_from_firebase(uid, phone)
     return {"ok": True, "deleted_user_id": uid, "phone": phone}
 
+# ----------------- ADMIN MANUAL WORKER & CONTRACTOR UPLOAD -----------------
+class AdminCreateWorkerReq(BaseModel):
+    name: str = Field(..., min_length=2, max_length=60)
+    phone: str = Field(..., min_length=10, max_length=15)
+    skills: List[str] = Field(default_factory=list)
+    daily_rate: int = Field(500, ge=0, le=50000)
+    experience_years: int = Field(1, ge=0, le=60)
+    village: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    radius_km: float = Field(10.0, ge=1.0, le=200.0)
+    verified: bool = True
+    free_now: bool = True
+    password: Optional[str] = "123456"
+
+@app.post("/api/admin/workers/create")
+def admin_create_worker(req: AdminCreateWorkerReq, u=Depends(current_user)):
+    need_admin(u)
+    phone = norm_phone(req.phone)
+    name = req.name.strip()
+    now = time.time()
+    pw_hash = hash_password((req.password or "123456").strip())
+
+    with db() as c:
+        existing = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
+        if existing:
+            uid = existing["id"]
+            c.execute("""
+                UPDATE users SET name=?, role='worker', password_hash=COALESCE(NULLIF(password_hash, ''), ?), 
+                                 is_blocked=0, is_deleted=0, deleted_at=0 WHERE id=?
+            """, (name, pw_hash, uid))
+        else:
+            cur = c.execute("""
+                INSERT INTO users(phone, name, role, password_hash, is_admin, avatar, is_blocked, is_deleted, created_at)
+                VALUES(?, ?, 'worker', ?, 0, '', 0, 0, ?)
+            """, (phone, name, pw_hash, now))
+            uid = cur.lastrowid
+            
+        skills_str = ",".join([s.strip().lower() for s in req.skills if s.strip()]) if req.skills else "mason,labour"
+        village = req.village.strip() or "Uttar Pradesh"
+        lat = req.lat if req.lat is not None else 26.4499
+        lng = req.lng if req.lng is not None else 80.3319
+        status = "free" if req.free_now else "offline"
+        free_until = (now + 86400 * 30) if req.free_now else 0
+        verified = 1 if req.verified else 0
+        
+        c.execute("""
+            INSERT INTO worker_profiles(user_id, skills, daily_rate, experience_years, village, lat, lng, radius_km, status, free_until, rating_avg, rating_count, verified)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 4.8, 1, ?)
+            ON CONFLICT(user_id) DO UPDATE SET 
+                skills=excluded.skills, daily_rate=excluded.daily_rate, experience_years=excluded.experience_years,
+                village=excluded.village, lat=excluded.lat, lng=excluded.lng, radius_km=excluded.radius_km,
+                status=excluded.status, free_until=excluded.free_until, verified=excluded.verified
+        """, (uid, skills_str, req.daily_rate, req.experience_years, village, lat, lng, req.radius_km, status, free_until, verified))
+
+    # Sync to Firebase Firestore auth_credentials and collections
+    try:
+        firebase_sync.save_credential(phone, uid, pw_hash, name, "worker", "")
+        firebase_sync.sync_user(uid)
+        firebase_sync.sync_worker_profile(uid)
+    except Exception as e:
+        logger.warning("Admin worker create firebase sync error: %s", e)
+
+    return {"ok": True, "worker_id": uid, "name": name, "phone": phone, "role": "worker"}
+
+
+class AdminCreateContractorReq(BaseModel):
+    name: str = Field(..., min_length=2, max_length=60)
+    company: str = ""
+    phone: str = Field(..., min_length=10, max_length=15)
+    skills: List[str] = Field(default_factory=list)
+    min_budget: int = Field(25000, ge=0, le=10000000)
+    experience_years: int = Field(3, ge=0, le=60)
+    crew_count: int = Field(5, ge=0, le=500)
+    village: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    radius_km: float = Field(25.0, ge=1.0, le=300.0)
+    about: str = ""
+    verified: bool = True
+    password: Optional[str] = "123456"
+
+@app.post("/api/admin/contractors/create")
+def admin_create_contractor(req: AdminCreateContractorReq, u=Depends(current_user)):
+    need_admin(u)
+    phone = norm_phone(req.phone)
+    name = req.name.strip()
+    now = time.time()
+    pw_hash = hash_password((req.password or "123456").strip())
+
+    with db() as c:
+        existing = c.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
+        if existing:
+            uid = existing["id"]
+            c.execute("""
+                UPDATE users SET name=?, role='contractor', password_hash=COALESCE(NULLIF(password_hash, ''), ?), 
+                                 is_blocked=0, is_deleted=0, deleted_at=0 WHERE id=?
+            """, (name, pw_hash, uid))
+        else:
+            cur = c.execute("""
+                INSERT INTO users(phone, name, role, password_hash, is_admin, avatar, is_blocked, is_deleted, created_at)
+                VALUES(?, ?, 'contractor', ?, 0, '', 0, 0, ?)
+            """, (phone, name, pw_hash, now))
+            uid = cur.lastrowid
+            
+        skills_str = ",".join([s.strip().lower() for s in req.skills if s.strip()]) if req.skills else "house_construction,civil"
+        village = req.village.strip() or "Uttar Pradesh"
+        company = req.company.strip() or f"{name} Construction"
+        lat = req.lat if req.lat is not None else 26.4499
+        lng = req.lng if req.lng is not None else 80.3319
+        verified = 1 if req.verified else 0
+        about = req.about.strip() or "मकान निर्माण, आरसीसी और ठेकेदारी का सम्पूर्ण काम।"
+        
+        c.execute("""
+            INSERT INTO contractor_profiles(user_id, company, skills, village, lat, lng, radius_km, min_budget, experience_years, about, verified)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET 
+                company=excluded.company, skills=excluded.skills, village=excluded.village,
+                lat=excluded.lat, lng=excluded.lng, radius_km=excluded.radius_km,
+                min_budget=excluded.min_budget, experience_years=excluded.experience_years,
+                about=excluded.about, verified=excluded.verified
+        """, (uid, company, skills_str, village, lat, lng, req.radius_km, req.min_budget, req.experience_years, about, verified))
+
+    # Sync to Firebase Firestore auth_credentials and collections
+    try:
+        firebase_sync.save_credential(phone, uid, pw_hash, name, "contractor", "")
+        firebase_sync.sync_user(uid)
+        firebase_sync.sync_contractor_profile(uid)
+    except Exception as e:
+        logger.warning("Admin contractor create firebase sync error: %s", e)
+
+    return {"ok": True, "contractor_id": uid, "name": name, "company": company, "phone": phone, "role": "contractor"}
+
+
+class AdminBulkUploadReq(BaseModel):
+    role: str = "worker"
+    items: List[dict] = Field(default_factory=list)
+
+@app.post("/api/admin/bulk-upload")
+def admin_bulk_upload(req: AdminBulkUploadReq, u=Depends(current_user)):
+    need_admin(u)
+    created = 0
+    errors = []
+    
+    for item in req.items:
+        try:
+            phone_raw = str(item.get("phone") or item.get("Phone") or item.get("mobile") or "").strip()
+            name_raw = str(item.get("name") or item.get("Name") or item.get("worker_name") or "User").strip()
+            if not phone_raw or len(phone_raw) < 10:
+                continue
+            skills_val = item.get("skills") or item.get("Skills") or item.get("work") or ""
+            skills_list = [s.strip() for s in str(skills_val).split(",") if s.strip()]
+            village_val = str(item.get("village") or item.get("Village") or item.get("city") or item.get("address") or "")
+            
+            if req.role == "contractor":
+                c_req = AdminCreateContractorReq(
+                    name=name_raw,
+                    company=str(item.get("company") or item.get("Company") or ""),
+                    phone=phone_raw,
+                    skills=skills_list,
+                    min_budget=int(item.get("min_budget") or item.get("budget") or 25000),
+                    experience_years=int(item.get("experience_years") or item.get("experience") or 3),
+                    village=village_val,
+                    verified=True
+                )
+                admin_create_contractor(c_req, u)
+            else:
+                w_req = AdminCreateWorkerReq(
+                    name=name_raw,
+                    phone=phone_raw,
+                    skills=skills_list,
+                    daily_rate=int(item.get("daily_rate") or item.get("rate") or 500),
+                    experience_years=int(item.get("experience_years") or item.get("experience") or 2),
+                    village=village_val,
+                    verified=True,
+                    free_now=True
+                )
+                admin_create_worker(w_req, u)
+            created += 1
+        except Exception as e:
+            errors.append(f"{item.get('name', 'Unknown')}: {str(e)}")
+            
+    return {"ok": True, "created": created, "total": len(req.items), "errors": errors}
+
 # ----------------- ADMIN SETTINGS & TOKEN FEE -----------------
 class AdminSettingsReq(BaseModel):
     booking_token_fee: int = Field(10, ge=1, le=5000)
