@@ -236,6 +236,8 @@ def restore_all_from_firestore():
         fs_workers = fetch_all_docs("worker_profiles")
         fs_contractors = fetch_all_docs("contractor_profiles")
         fs_bookings = fetch_all_docs("bookings")
+        fs_jobs = fetch_all_docs("jobs")
+        fs_ai_calls = fetch_all_docs("ai_calls")
         fs_creds = fetch_all_docs("auth_credentials")
 
         with db() as c:
@@ -361,6 +363,60 @@ def restore_all_from_firestore():
                     INSERT OR REPLACE INTO bookings(id, customer_id, worker_id, skill, note, address, start_date, days, agreed_rate, status, rating, review, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (bid, cid, wid, skill, note, address, start_date, days, agreed_rate, status, rating, review, created_at, updated_at))
+
+            # 6. Restore Jobs
+            for j in fs_jobs:
+                jid = int(j["_id"]) if str(j["_id"]).isdigit() else None
+                if not jid:
+                    continue
+                cid = int(j.get("customer_id") or 0)
+                skill = str(j.get("skill") or "")
+                desc = str(j.get("description") or "")
+                addr = str(j.get("address") or "")
+                lat = float(j["lat"]) if j.get("lat") is not None else None
+                lng = float(j["lng"]) if j.get("lng") is not None else None
+                sdate = str(j.get("start_date") or "")
+                days = int(j.get("days") or 1)
+                budget = int(j.get("budget") or 0)
+                status = str(j.get("status") or "open")
+                created_at = float(j.get("created_at") or time.time())
+
+                c.execute("""
+                    INSERT OR REPLACE INTO jobs(id, customer_id, skill, description, lat, lng, address, start_date, days, budget, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (jid, cid, skill, desc, lat, lng, addr, sdate, days, budget, status, created_at))
+
+            # 7. Restore AI Calls
+            for ac in fs_ai_calls:
+                acid = int(ac["_id"]) if str(ac["_id"]).isdigit() else None
+                if not acid:
+                    continue
+                c.execute("""
+                    INSERT OR REPLACE INTO ai_calls(id, job_id, customer_id, customer_name, customer_phone,
+                        worker_id, worker_name, worker_phone, skill, provider, status, customer_keypad,
+                        worker_keypad, duration_seconds, failure_reason, notes, created_at, updated_at, completed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    acid,
+                    int(ac.get("job_id") or 0),
+                    int(ac.get("customer_id") or 0),
+                    str(ac.get("customer_name") or ""),
+                    str(ac.get("customer_phone") or ""),
+                    int(ac.get("worker_id") or 0),
+                    str(ac.get("worker_name") or ""),
+                    str(ac.get("worker_phone") or ""),
+                    str(ac.get("skill") or ""),
+                    str(ac.get("provider") or "simulator"),
+                    str(ac.get("status") or "initiated"),
+                    str(ac.get("customer_keypad") or ""),
+                    str(ac.get("worker_keypad") or ""),
+                    int(ac.get("duration_seconds") or 0),
+                    str(ac.get("failure_reason") or ""),
+                    str(ac.get("notes") or ""),
+                    float(ac.get("created_at") or time.time()),
+                    float(ac.get("updated_at") or time.time()),
+                    float(ac["completed_at"]) if ac.get("completed_at") else None
+                ))
 
             c.execute("PRAGMA foreign_keys=ON")
         logger.info("Restored all collections from Firestore successfully.")

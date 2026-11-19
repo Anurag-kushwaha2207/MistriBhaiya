@@ -47,7 +47,15 @@ def get_skill_hindi(skill: str) -> str:
     return SKILL_NAMES_HI.get(skill.lower().strip(), skill or "कारीगरी")
 
 
-def get_customer_prompt(worker_name: str, skill_hi: str) -> str:
+def get_customer_prompt(worker_name: str, skill_hi: str, direction: str = "customer_first") -> str:
+    if direction == "worker_first":
+        return (
+            f"Namaste! Aapne hamare Mistri App par ek kaam publish kiya tha. "
+            f"Aapke kaam ke liye humne mistri {worker_name} ji ({skill_hi}) se baat ki hai, "
+            f"aur woh aapse abhi baat karne ke liye bilkul taiyar hain. "
+            f"Kya aap unse baat karna chahenge? "
+            f"Connect hone ke liye kripya apne phone par 1 dabayein. Agar abhi baat nahi karna chahte, toh 2 dabayein."
+        )
     return (
         f"Namaste! Aapne hamare Mistri App par ek kaam publish kiya tha. "
         f"Aapke ghar ke paas humein ek suitable mistri mila hai. "
@@ -66,11 +74,12 @@ def get_worker_prompt(skill_hi: str) -> str:
     )
 
 
-def initiate_ai_call(job_id: int, worker_id: int) -> Dict[str, Any]:
+def initiate_ai_call(job_id: int, worker_id: int, direction: str = "customer_first") -> Dict[str, Any]:
     """Initiates an AI calling workflow:
+    direction: 'customer_first' (calls Homeowner first) or 'worker_first' (calls Mistri first)
     1. Validates job & worker
     2. Prevents duplicate active calls
-    3. Creates ai_calls record (customer_ringing)
+    3. Creates ai_calls record
     4. Syncs to Firebase Firestore
     5. Dispatches call to configured telephony provider
     """
@@ -93,7 +102,7 @@ def initiate_ai_call(job_id: int, worker_id: int) -> Dict[str, Any]:
             """
             SELECT u.id, u.name, u.phone, wp.skills, wp.daily_rate, wp.village
             FROM users u
-            JOIN worker_profiles wp ON wp.user_id = u.id
+            LEFT JOIN worker_profiles wp ON wp.user_id = u.id
             WHERE u.id = ?
             """,
             (worker_id,),
@@ -107,8 +116,8 @@ def initiate_ai_call(job_id: int, worker_id: int) -> Dict[str, Any]:
             SELECT id, status FROM ai_calls
             WHERE job_id = ? AND worker_id = ? AND status IN (
                 'initiated', 'customer_ringing', 'customer_answered',
-                'customer_accepted', 'worker_ringing', 'worker_accepted',
-                'connecting', 'connected'
+                'customer_accepted', 'worker_ringing', 'worker_answered',
+                'worker_accepted', 'connecting', 'connected'
             )
             ORDER BY id DESC LIMIT 1
             """,
@@ -123,6 +132,7 @@ def initiate_ai_call(job_id: int, worker_id: int) -> Dict[str, Any]:
         now = time.time()
         skill_hi = get_skill_hindi(job["skill"])
         provider = config.AI_CALL_PROVIDER or "simulator"
+        init_status = "worker_ringing" if direction == "worker_first" else "customer_ringing"
 
         # 4. Insert into ai_calls table
         cur = c.execute(
@@ -130,9 +140,9 @@ def initiate_ai_call(job_id: int, worker_id: int) -> Dict[str, Any]:
             INSERT INTO ai_calls (
                 job_id, customer_id, customer_name, customer_phone,
                 worker_id, worker_name, worker_phone, skill,
-                provider, status, created_at, updated_at
+                provider, status, direction, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'customer_ringing', ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -144,6 +154,8 @@ def initiate_ai_call(job_id: int, worker_id: int) -> Dict[str, Any]:
                 worker["phone"],
                 job["skill"],
                 provider,
+                init_status,
+                direction,
                 now,
                 now,
             ),
@@ -163,29 +175,43 @@ def initiate_ai_call(job_id: int, worker_id: int) -> Dict[str, Any]:
     firebase_sync.sync_ai_call(call_id)
 
     # 6. Dispatch to chosen telephony provider
-    provider_info = _dispatch_customer_call(
-        call_id=call_id,
-        customer_phone=job["customer_phone"],
-        worker_name=worker["name"] or "Mistri",
-        skill_hi=skill_hi,
-        provider=provider,
-    )
-
-    with db() as c:
-        c.execute(
-            "UPDATE ai_calls SET provider_call_id=?, updated_at=? WHERE id=?",
-            (provider_info.get("call_id", f"ai-{call_id}"), time.time(), call_id),
+    if direction == "worker_first":
+        provider_info = _dispatch_worker_call(
+            call_id=call_id,
+            worker_phone=worker["phone"],
+            skill_hi=skill_hi,
+            provider=provider,
         )
+        with db() as c:
+            c.execute(
+                "UPDATE ai_calls SET worker_call_id=?, updated_at=? WHERE id=?",
+                (provider_info.get("call_id", f"ai-w-{call_id}"), time.time(), call_id),
+            )
+    else:
+        provider_info = _dispatch_customer_call(
+            call_id=call_id,
+            customer_phone=job["customer_phone"],
+            worker_name=worker["name"] or "Mistri",
+            skill_hi=skill_hi,
+            provider=provider,
+        )
+        with db() as c:
+            c.execute(
+                "UPDATE ai_calls SET provider_call_id=?, updated_at=? WHERE id=?",
+                (provider_info.get("call_id", f"ai-{call_id}"), time.time(), call_id),
+            )
+
     firebase_sync.sync_ai_call(call_id)
 
     return {
         "ok": True,
         "call_id": call_id,
-        "status": "customer_ringing",
+        "status": init_status,
+        "direction": direction,
         "provider": provider,
         "customer": {"name": job["customer_name"], "phone": job["customer_phone"]},
         "worker": {"name": worker["name"], "phone": worker["phone"]},
-        "speech_prompt": get_customer_prompt(worker["name"] or "Mistri", skill_hi),
+        "speech_prompt": get_customer_prompt(worker["name"] or "Mistri", skill_hi, direction=direction),
         "created_at": now,
     }
 
@@ -229,19 +255,27 @@ def handle_customer_dtmf(call_id: int, digit: str) -> Dict[str, Any]:
         if not call:
             raise HTTPException(404, "Call session not found")
 
+        is_worker_first = (call["direction"] if "direction" in call.keys() else "customer_first") == "worker_first"
+
         if digit == "1":
-            # Customer accepted!
-            c.execute(
-                """
-                UPDATE ai_calls
-                SET customer_keypad = '1',
-                    status = 'customer_accepted',
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (now, call_id),
-            )
-            new_status = "customer_accepted"
+            if is_worker_first:
+                c.execute(
+                    "UPDATE ai_calls SET customer_keypad='1', status='connecting', updated_at=? WHERE id=?",
+                    (now, call_id),
+                )
+                new_status = "connecting"
+            else:
+                c.execute(
+                    """
+                    UPDATE ai_calls
+                    SET customer_keypad = '1',
+                        status = 'customer_accepted',
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, call_id),
+                )
+                new_status = "customer_accepted"
         elif digit == "2":
             # Customer declined
             duration = int(now - call["created_at"])
@@ -250,6 +284,7 @@ def handle_customer_dtmf(call_id: int, digit: str) -> Dict[str, Any]:
                 UPDATE ai_calls
                 SET customer_keypad = '2',
                     status = 'customer_declined',
+                    failure_reason = 'Customer declined connection',
                     duration_seconds = ?,
                     completed_at = ?,
                     updated_at = ?
@@ -267,11 +302,40 @@ def handle_customer_dtmf(call_id: int, digit: str) -> Dict[str, Any]:
 
     firebase_sync.sync_ai_call(call_id)
 
-    # If accepted, automatically trigger Leg 2 (Worker Call)
+    # If accepted, trigger next step
     if new_status == "customer_accepted":
         return trigger_worker_call(call_id)
+    elif new_status == "connecting":
+        return connect_call_bridge(call_id)
 
     return {"ok": True, "call_id": call_id, "status": new_status, "customer_keypad": digit}
+
+
+def trigger_customer_call(call_id: int) -> Dict[str, Any]:
+    """Triggers outbound call to Homeowner when Mistri is called first and presses 1."""
+    now = time.time()
+    with db() as c:
+        call = c.execute("SELECT * FROM ai_calls WHERE id = ?", (call_id,)).fetchone()
+        if not call:
+            raise HTTPException(404, "Call not found")
+        c.execute("UPDATE ai_calls SET status = 'customer_ringing', updated_at = ? WHERE id = ?", (now, call_id))
+    firebase_sync.sync_ai_call(call_id)
+
+    skill_hi = get_skill_hindi(call["skill"])
+    cust_speech = get_customer_prompt(call["worker_name"] or "Mistri", skill_hi, direction="worker_first")
+    provider = call["provider"] or "simulator"
+
+    info = _dispatch_customer_call(
+        call_id=call_id,
+        customer_phone=call["customer_phone"],
+        worker_name=call["worker_name"] or "Mistri",
+        skill_hi=skill_hi,
+        provider=provider,
+    )
+    with db() as c:
+        c.execute("UPDATE ai_calls SET provider_call_id=?, updated_at=? WHERE id=?", (info.get("call_id", f"ai-c-{call_id}"), time.time(), call_id))
+    firebase_sync.sync_ai_call(call_id)
+    return {"ok": True, "call_id": call_id, "status": "customer_ringing", "speech": cust_speech}
 
 
 def trigger_worker_call(call_id: int) -> Dict[str, Any]:
@@ -339,7 +403,7 @@ def _dispatch_worker_call(
 
 
 def handle_worker_dtmf(call_id: int, digit: str) -> Dict[str, Any]:
-    """Processes worker DTMF input (1 = Accept & Bridge, 2 = Decline)."""
+    """Processes worker DTMF input (1 = Accept, 2 = Decline)."""
     digit = str(digit).strip()
     now = time.time()
 
@@ -348,19 +412,29 @@ def handle_worker_dtmf(call_id: int, digit: str) -> Dict[str, Any]:
         if not call:
             raise HTTPException(404, "Call session not found")
 
+        is_worker_first = (call["direction"] if "direction" in call.keys() else "customer_first") == "worker_first"
+
         if digit == "1":
-            # Worker accepted! Bridge the call!
-            c.execute(
-                """
-                UPDATE ai_calls
-                SET worker_keypad = '1',
-                    status = 'connecting',
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (now, call_id),
-            )
-            new_status = "connecting"
+            if is_worker_first:
+                # Worker accepted first -> now call customer!
+                c.execute(
+                    "UPDATE ai_calls SET worker_keypad='1', status='worker_accepted', updated_at=? WHERE id=?",
+                    (now, call_id),
+                )
+                new_status = "worker_accepted"
+            else:
+                # Customer accepted first -> now worker accepted -> bridge call!
+                c.execute(
+                    """
+                    UPDATE ai_calls
+                    SET worker_keypad = '1',
+                        status = 'connecting',
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, call_id),
+                )
+                new_status = "connecting"
         elif digit == "2":
             # Worker declined
             duration = int(now - call["created_at"])
@@ -387,8 +461,9 @@ def handle_worker_dtmf(call_id: int, digit: str) -> Dict[str, Any]:
 
     firebase_sync.sync_ai_call(call_id)
 
-    if new_status == "connecting":
-        # Bridge the call
+    if new_status == "worker_accepted":
+        return trigger_customer_call(call_id)
+    elif new_status == "connecting":
         return connect_call_bridge(call_id)
 
     return {"ok": True, "call_id": call_id, "status": new_status, "worker_keypad": digit}

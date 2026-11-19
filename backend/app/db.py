@@ -329,6 +329,7 @@ def migrate(c):
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_ai_calls_job ON ai_calls(job_id, worker_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_ai_calls_status ON ai_calls(status)")
+    _add_cols(c, "ai_calls", [("direction", "TEXT DEFAULT 'customer_first'")])
 
 def init_db():
     with db() as c:

@@ -1955,9 +1955,24 @@ def admin_calls(u=Depends(current_user)):
 
 
 # ----------------- ADMIN JOBS & AI CALLING AGENT -----------------
+SKILL_SYNONYMS = {
+    "mason": ["mason", "rajmistri", "चिनाई", "राजमिस्त्री", "mistri"],
+    "rajmistri": ["mason", "rajmistri", "चिनाई", "राजमिस्त्री", "mistri"],
+    "labour": ["labour", "helper", "मजदूर", "लेबर", "मजदूर / हेल्पर"],
+    "helper": ["labour", "helper", "मजदूर", "लेबर", "मजदूर / हेल्पर"],
+    "electrician": ["electrician", "बिजली", "वायरिंग"],
+    "plumber": ["plumber", "नल", "पाइप", "प्लम्बर"],
+    "painter": ["painter", "रंगाई", "पुताई", "पेंटर"],
+    "tiles": ["tiles", "मार्बल", "टाइल्स"],
+    "pop": ["pop", "ceiling", "सीलिंग", "पीओपी"],
+    "welder": ["welder", "वेल्डर", "लोहा"],
+    "carpenter": ["carpenter", "बढ़ई", "लकड़ी"],
+}
+
 class AdminInitiateAiCallReq(BaseModel):
     job_id: int
     worker_id: int
+    direction: str = "customer_first"  # "customer_first" | "worker_first"
 
 class AdminSimulateAiCallReq(BaseModel):
     action: str
@@ -1972,6 +1987,14 @@ class AdminCreateSampleJobReq(BaseModel):
 def admin_get_jobs(u=Depends(current_user)):
     need_admin(u)
     with db() as c:
+        # Check if local SQLite is missing jobs, if so restore from Firestore
+        cnt = c.execute("SELECT COUNT(*) AS c FROM jobs").fetchone()["c"]
+        if cnt == 0:
+            try:
+                firebase_sync.restore_all_from_firestore()
+            except Exception:
+                pass
+
         jobs = c.execute("""
             SELECT j.*, u.name AS customer_name, u.phone AS customer_phone
             FROM jobs j
@@ -1979,11 +2002,24 @@ def admin_get_jobs(u=Depends(current_user)):
             ORDER BY j.created_at DESC LIMIT 100
         """).fetchall()
 
+        # Fetch all registered workers in the entire system so Admin can ALWAYS see and select anyone
+        all_workers_raw = c.execute("""
+            SELECT u.id, u.name, u.phone, wp.skills, wp.daily_rate, wp.village,
+                   wp.lat, wp.lng, wp.radius_km, wp.status, wp.rating_avg, wp.rating_count
+            FROM users u
+            LEFT JOIN worker_profiles wp ON wp.user_id = u.id
+            WHERE u.role = 'worker'
+              AND (u.is_blocked IS NULL OR u.is_blocked = 0)
+              AND (u.is_deleted IS NULL OR u.is_deleted = 0)
+            ORDER BY u.id DESC
+        """).fetchall()
+        all_workers = [dict(w) for w in all_workers_raw]
+
         out = []
         for job in jobs:
             j_dict = dict(job)
             jid = j_dict["id"]
-            j_skill = j_dict["skill"]
+            j_skill = (j_dict.get("skill") or "").lower().strip()
             j_lat = j_dict["lat"]
             j_lng = j_dict["lng"]
 
@@ -1993,32 +2029,44 @@ def admin_get_jobs(u=Depends(current_user)):
             """, (jid,)).fetchone()
             j_dict["active_call"] = dict(active_call) if active_call else None
 
-            # Match suitable nearby workers
-            workers = c.execute("""
-                SELECT u.id, u.name, u.phone, wp.skills, wp.daily_rate, wp.village,
-                       wp.lat, wp.lng, wp.radius_km, wp.status, wp.rating_avg, wp.rating_count
-                FROM users u
-                JOIN worker_profiles wp ON wp.user_id = u.id
-                WHERE (',' || wp.skills || ',') LIKE ? AND wp.skills != ''
-                  AND (u.is_blocked IS NULL OR u.is_blocked = 0)
-                  AND (u.is_deleted IS NULL OR u.is_deleted = 0)
-            """, (f"%,{j_skill},%",)).fetchall()
+            # Synonyms for this job's skill
+            syns = set(SKILL_SYNONYMS.get(j_skill, [j_skill]))
+            if not syns and j_skill:
+                syns = {j_skill}
 
             matched = []
-            for w in workers:
-                w_d = dict(w)
+            job_workers = []
+            for w in all_workers:
+                w_copy = dict(w)
                 dist = None
-                if j_lat is not None and j_lng is not None and w_d["lat"] is not None and w_d["lng"] is not None:
-                    dist = haversine_km(j_lat, j_lng, w_d["lat"], w_d["lng"])
-                w_d["distance_km"] = round(dist, 1) if dist is not None else None
-                matched.append(w_d)
+                if j_lat is not None and j_lng is not None and w_copy.get("lat") is not None and w_copy.get("lng") is not None:
+                    dist = haversine_km(j_lat, j_lng, w_copy["lat"], w_copy["lng"])
+                w_copy["distance_km"] = round(dist, 1) if dist is not None else None
 
-            # Sort: free first, then nearest
+                # Check skill match
+                w_skills = set(s.strip().lower() for s in (w_copy.get("skills") or "").split(",") if s.strip())
+                is_match = bool(syns.intersection(w_skills))
+                w_copy["is_skill_match"] = is_match
+
+                if is_match:
+                    matched.append(w_copy)
+                job_workers.append(w_copy)
+
+            # Sort matched: free first, then nearest
             matched.sort(key=lambda x: (
-                0 if x["status"] == "free" else 1,
-                x["distance_km"] if x["distance_km"] is not None else 9999
+                0 if x.get("status") == "free" else 1,
+                x["distance_km"] if x.get("distance_km") is not None else 9999
             ))
-            j_dict["matched_workers"] = matched[:5]
+            # Sort all workers: matched first, then free, then nearest, then newest
+            job_workers.sort(key=lambda x: (
+                0 if x.get("is_skill_match") else 1,
+                0 if x.get("status") == "free" else 1,
+                x["distance_km"] if x.get("distance_km") is not None else 9999,
+                -x["id"]
+            ))
+
+            j_dict["matched_workers"] = matched
+            j_dict["all_workers"] = job_workers
             out.append(j_dict)
 
     return {"jobs": out, "total": len(out)}
@@ -2047,7 +2095,7 @@ def admin_create_sample_job(req: AdminCreateSampleJobReq, u=Depends(current_user
 @app.post("/api/admin/ai-calls/initiate")
 def admin_initiate_ai_call(req: AdminInitiateAiCallReq, u=Depends(current_user)):
     need_admin(u)
-    res = ai_calling.initiate_ai_call(req.job_id, req.worker_id)
+    res = ai_calling.initiate_ai_call(req.job_id, req.worker_id, direction=req.direction)
     return res
 
 

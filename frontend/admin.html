@@ -1726,16 +1726,28 @@ function renderAiCalling() {
                       <div style="font-size:12.5px;color:#334155;">📍 ${esc(j.address || '-')}</div>
                       <b style="color:#16a34a;font-size:13px;">₹${j.budget || 0}</b>
                     </td>
-                    <td style="min-width:240px;">
-                      ${matched.length === 0 ? '<span style="color:#94a3b8;font-size:12px;">कोई मिस्त्री मैच नहीं हुआ</span>' : `
-                        <select id="workerSelect_${j.id}" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:12.5px;background:#fff;" ${isCallActive ? 'disabled' : ''}>
-                          ${matched.map(w => `
+                    <td style="min-width:270px;">
+                      <select id="workerSelect_${j.id}" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid #0f766e;font-size:12px;background:#fff;font-weight:600;color:#0f172a;" ${isCallActive ? 'disabled' : ''}>
+                        ${matched.length > 0 ? `
+                          <optgroup label="⭐ सुयोग्य मिस्त्री (Best Matched Workers)">
+                            ${matched.map(w => `
+                              <option value="${w.id}">
+                                👷 ${esc(w.name || 'Worker')} (ID: #${w.id}, 📞 ${esc(w.phone)}) · ${w.distance_km != null ? w.distance_km + ' km' : esc(w.village || 'Near')} · ₹${w.daily_rate || 0}/दिन · ${w.status === 'free' ? '🟢 FREE' : 'BUSY'}
+                              </option>
+                            `).join('')}
+                          </optgroup>
+                        ` : ''}
+                        <optgroup label="👥 सभी पंजीकृत मिस्त्री (All Registered Workers - SUNNY, आदि)">
+                          ${(j.all_workers || []).map(w => `
                             <option value="${w.id}">
-                              ${esc(w.name || 'Worker')} (${w.distance_km != null ? w.distance_km + ' km' : esc(w.village || 'Near')}) · ₹${w.daily_rate}/दिन · ⭐ ${w.rating_avg || 5.0} · ${w.status === 'free' ? 'FREE' : 'BUSY'}
+                              👷 ${esc(w.name || 'Worker')} (ID: #${w.id}, 📞 ${esc(w.phone)}) · [${esc(w.skills || 'All Work')}] · ${w.distance_km != null ? w.distance_km + ' km' : esc(w.village || '-')} · ${w.status === 'free' ? '🟢 FREE' : 'BUSY'}
                             </option>
                           `).join('')}
-                        </select>
-                      `}
+                        </optgroup>
+                      </select>
+                      <div style="font-size:11px;color:#64748b;margin-top:4px;">
+                        💡 लिस्ट में से SUNNY या किसी भी पंजीकृत मिस्त्री को चुन सकते हैं।
+                      </div>
                     </td>
                     <td>
                       ${isCallActive ? `
@@ -1744,9 +1756,14 @@ function renderAiCalling() {
                           <small style="font-size:11px;color:#64748b;">(डुप्लीकेट कॉल रोकी गई)</small>
                         </div>
                       ` : `
-                        <button class="btn-action primary" style="background:#16a34a;white-space:nowrap;" onclick="initiateAiCallForJob(${j.id})" ${matched.length === 0 ? 'disabled' : ''}>
-                          📞 Call Customer with AI
-                        </button>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <button class="btn-action primary" style="background:#16a34a;white-space:nowrap;padding:7px 12px;font-size:12px;font-weight:700;" onclick="initiateAiCallForJob(${j.id}, 'customer_first')">
+                            📞 ग्राहक को पहले कॉल करें
+                          </button>
+                          <button class="btn-action primary" style="background:#0f766e;white-space:nowrap;padding:7px 12px;font-size:12px;font-weight:700;" onclick="initiateAiCallForJob(${j.id}, 'worker_first')">
+                            👷 मिस्त्री को पहले कॉल करें
+                          </button>
+                        </div>
                       `}
                     </td>
                   </tr>
@@ -1875,17 +1892,21 @@ function renderAiCalling() {
   `;
 }
 
-async function initiateAiCallForJob(jobId) {
+async function initiateAiCallForJob(jobId, direction = 'customer_first') {
   const sel = document.getElementById("workerSelect_" + jobId);
   const workerId = sel ? parseInt(sel.value, 10) : null;
   if (!workerId) {
-    alert("कृपया पहले काम के लिए एक सुयोग्य मिस्त्री चुनें!");
+    alert("कृपया पहले काम के लिए एक मिस्त्री चुनें!");
     return;
   }
 
   try {
-    const res = await api("/admin/ai-calls/initiate", "POST", { job_id: jobId, worker_id: workerId });
-    showToast(`📞 AI कॉल शुरू! ग्राहक (${res.customer?.name || ''}) को कॉल जा रही है...`);
+    const res = await api("/admin/ai-calls/initiate", "POST", { job_id: jobId, worker_id: workerId, direction: direction });
+    if (direction === 'worker_first') {
+      showToast(`👷 AI कॉल शुरू! पहले मिस्त्री (${res.worker?.name || ''}) को कॉल जा रही है... पुष्टि के बाद ग्राहक को कॉल जाएगी।`);
+    } else {
+      showToast(`📞 AI कॉल शुरू! पहले ग्राहक (${res.customer?.name || ''}) को कॉल जा रही है... पुष्टि के बाद मिस्त्री को कॉल जाएगी।`);
+    }
     fetchAllData();
   } catch (err) {
     alert("AI कॉल शुरू करने में त्रुटि: " + err.message);
