@@ -1882,10 +1882,10 @@ function renderAiCalling() {
       <h3 style="font-size:15px;font-weight:800;color:#0f172a;margin:0 0 8px;">⚙️ AI Voice Telephony & Firebase Setup Guide</h3>
       <div style="font-size:13px;color:#475569;line-height:1.6;">
         <ul style="margin:6px 0 0 18px;padding:0;">
-          <li><b>सिम्युलेटर मोड (वर्तमान में चालू):</b> आप ऊपर दिए गए टेस्ट कंट्रोल्स से ग्राहक के '1' या '2' दबाने, मिस्त्री को रिंग होने और दोनों के कॉल पर जुड़ने का संपूर्ण वॉइस फ्लो तुरंत लाइव टेस्ट कर सकते हैं।</li>
-          <li><b>Vapi AI से लाइव कॉलिंग:</b> Render डैशबोर्ड के Environment Variables में <code>VAPI_API_KEY</code>, <code>VAPI_PHONE_NUMBER_ID</code>, और <code>AI_CALL_PROVIDER=vapi</code> जोड़ते ही भारतीय मोबाइल नंबरों पर वास्तविक AI कॉल शुरू हो जाएगी।</li>
-          <li><b>Exotel / Twilio सपोर्ट:</b> Exotel (भारतीय टेलीकॉम) या Twilio के क्रेडेंशियल्स जोड़कर भी सीधे आउटबाउंड कॉल्स व DTMF ब्रिजिंग संचालित की जा सकती है।</li>
-          <li><b>Firebase Firestore लाइव सिंक:</b> प्रत्येक कॉल का सत्र, समय, कीपैड रिस्पांस एवं अवधि <code>ai_calls</code> कलेक्शन में सीधे स्टोर व लाइव सिंक होती है।</li>
+          <li><b>सिम्युलेटर मोड (वर्तमान में टेस्ट के लिए सक्रिय):</b> ऊपर दिए गए टेस्ट कंट्रोल्स से ग्राहक के '1' या '2' दबाने, मिस्त्री को रिंग होने और दोनों के कॉल पर जुड़ने का संपूर्ण वॉइस फ्लो बिना किसी बैलेंस के तुरंत लाइव टेस्ट कर सकते हैं।</li>
+          <li style="margin-top:6px;"><b>🇮🇳 सर्वम AI (Sarvam AI - सर्वोत्तम भारतीय विकल्प):</b> भारतीय हिंदी व हिंग्लिश में बिल्कुल प्राकृतिक आवाज़। Render डैशबोर्ड के Environment Variables में <code>AI_CALL_PROVIDER=sarvam</code>, <code>SARVAM_API_KEY</code>, <code>SARVAM_ORG_ID</code>, <code>SARVAM_WORKSPACE_ID</code> व <code>SARVAM_APP_ID</code> सेट करते ही भारतीय मोबाइल नंबरों पर वास्तविक आउटबाउंड AI कॉल शुरू हो जाएगी।</li>
+          <li style="margin-top:6px;"><b>Vapi AI / Twilio / Exotel सपोर्ट:</b> Vapi AI (<code>AI_CALL_PROVIDER=vapi</code>), Exotel (भारतीय टेलीकॉम) या Twilio के क्रेडेंशियल्स जोड़कर भी सीधे आउटबाउंड कॉल्स व DTMF ब्रिजिंग संचालित की जा सकती है।</li>
+          <li style="margin-top:6px;"><b>🔥 Firebase Firestore लाइव सिंक:</b> प्रत्येक कॉल का सत्र, समय, कीपैड रिस्पांस एवं अवधि <code>ai_calls</code> कलेक्शन में सीधे स्टोर व लाइव सिंक होती है।</li>
         </ul>
       </div>
     </div>

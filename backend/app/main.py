@@ -2130,6 +2130,57 @@ def admin_simulate_ai_call(call_id: int, req: AdminSimulateAiCallReq, u=Depends(
 
 
 # ----------------- AI CALLING WEBHOOKS -----------------
+@app.post("/api/webhooks/ai-calling/sarvam")
+async def webhook_sarvam(request: Request, call_id: Optional[int] = Query(None), leg: str = Query("customer")):
+    try:
+        body = await request.json()
+        logger.info("Sarvam AI webhook for call #%s (%s): %s", call_id, leg, body)
+
+        ctx = body.get("context", {}) or {}
+        c_id = call_id or ctx.get("call_id")
+        call_leg = leg or ctx.get("leg") or "customer"
+
+        if not c_id:
+            logger.warning("Sarvam webhook received without call_id")
+            return {"ok": True}
+
+        status = (body.get("status") or body.get("call_status") or "").lower()
+        extracted = body.get("extracted_data") or body.get("variables") or {}
+        digit = str(extracted.get("digit") or extracted.get("keypad") or extracted.get("choice") or "").strip()
+
+        # Voice intent detection fallback
+        if not digit:
+            if extracted.get("user_agreed") is True or extracted.get("status") == "agreed":
+                digit = "1"
+            elif extracted.get("user_agreed") is False or extracted.get("status") == "declined":
+                digit = "2"
+
+        if status in ("in-progress", "answered", "connected"):
+            with db() as c:
+                st = "customer_answered" if call_leg == "customer" else "worker_ringing"
+                c.execute("UPDATE ai_calls SET status=?, updated_at=? WHERE id=?", (st, time.time(), c_id))
+            firebase_sync.sync_ai_call(c_id)
+
+        if digit:
+            if call_leg == "customer":
+                ai_calling.handle_customer_dtmf(c_id, digit)
+            elif call_leg == "worker":
+                ai_calling.handle_worker_dtmf(c_id, digit)
+
+        if status in ("completed", "ended"):
+            duration = int(body.get("duration_seconds") or body.get("duration") or 0)
+            ai_calling.complete_call(c_id, "completed", f"Sarvam AI call completed ({duration}s)")
+        elif status in ("no-answer", "unanswered"):
+            ai_calling.complete_call(c_id, "no_answer", "User did not pick up phone")
+        elif status in ("failed", "busy"):
+            ai_calling.complete_call(c_id, "failed", f"Call status: {status}")
+
+        return {"ok": True}
+    except Exception as e:
+        logger.error("Sarvam AI webhook error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/webhooks/ai-calling/vapi")
 async def webhook_vapi(request: Request, call_id: int = Query(...), leg: str = Query("customer")):
     try:

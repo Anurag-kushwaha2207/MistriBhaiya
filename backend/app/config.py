@@ -41,8 +41,14 @@ EXOTEL_API_TOKEN = os.getenv("EXOTEL_API_TOKEN", "")
 EXOTEL_SUBDOMAIN = os.getenv("EXOTEL_SUBDOMAIN", "api.exotel.com")
 EXOTEL_EXOPHONE = os.getenv("EXOTEL_EXOPHONE", "")       # your virtual number (caller id for both legs)
 
-# AI Voice Calling Agent (Vapi / Exotel / Twilio / Simulator)
-AI_CALL_PROVIDER = os.getenv("AI_CALL_PROVIDER", "simulator") # simulator | vapi | exotel | twilio
+# AI Voice Calling Agent (Sarvam AI / Vapi / Exotel / Twilio / Simulator)
+AI_CALL_PROVIDER = os.getenv("AI_CALL_PROVIDER", "simulator") # simulator | sarvam | vapi | exotel | twilio
+SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
+SARVAM_ORG_ID = os.getenv("SARVAM_ORG_ID", "")
+SARVAM_WORKSPACE_ID = os.getenv("SARVAM_WORKSPACE_ID", "")
+SARVAM_APP_ID = os.getenv("SARVAM_APP_ID", "")
+SARVAM_CONNECTION_ID = os.getenv("SARVAM_CONNECTION_ID", "")
+SARVAM_AGENT_PHONE = os.getenv("SARVAM_AGENT_PHONE", "")
 VAPI_API_KEY = os.getenv("VAPI_API_KEY", "")
 VAPI_PHONE_NUMBER_ID = os.getenv("VAPI_PHONE_NUMBER_ID", "")
 VAPI_CUSTOMER_ASSISTANT_ID = os.getenv("VAPI_CUSTOMER_ASSISTANT_ID", "")

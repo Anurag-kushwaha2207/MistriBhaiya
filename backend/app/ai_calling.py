@@ -6,6 +6,7 @@ Supports: Vapi AI, Exotel, Twilio, and Simulator (test runner).
 
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -222,7 +223,19 @@ def _dispatch_customer_call(
     """Dispatches leg 1 (customer call) via selected provider."""
     cust_speech = get_customer_prompt(worker_name, skill_hi)
 
-    if provider == "vapi" and config.VAPI_API_KEY:
+    if provider == "sarvam" and config.SARVAM_API_KEY:
+        try:
+            return _call_sarvam_outbound(
+                call_id=call_id,
+                phone=customer_phone,
+                prompt=cust_speech,
+                leg="customer",
+                extra_context={"worker_name": worker_name, "skill_hi": skill_hi},
+            )
+        except Exception as e:
+            logger.error("Sarvam call customer error: %s. Falling back to simulator.", e)
+
+    elif provider == "vapi" and config.VAPI_API_KEY:
         try:
             return _call_vapi_customer(call_id, customer_phone, cust_speech, worker_name, skill_hi)
         except Exception as e:
@@ -386,7 +399,19 @@ def _dispatch_worker_call(
     """Dispatches leg 2 (worker call) via chosen telephony provider."""
     worker_speech = get_worker_prompt(skill_hi)
 
-    if provider == "vapi" and config.VAPI_API_KEY:
+    if provider == "sarvam" and config.SARVAM_API_KEY:
+        try:
+            return _call_sarvam_outbound(
+                call_id=call_id,
+                phone=worker_phone,
+                prompt=worker_speech,
+                leg="worker",
+                extra_context={"skill_hi": skill_hi},
+            )
+        except Exception as e:
+            logger.error("Sarvam worker call error: %s. Falling back to simulator.", e)
+
+    elif provider == "vapi" and config.VAPI_API_KEY:
         try:
             return _call_vapi_worker(call_id, worker_phone, worker_speech, skill_hi)
         except Exception as e:
@@ -558,6 +583,65 @@ def simulate_step(call_id: int, action: str) -> Dict[str, Any]:
 
     else:
         raise HTTPException(400, f"Unknown simulation action '{action}'")
+
+
+# ----------------- Sarvam AI Integration Helpers -----------------
+def _call_sarvam_outbound(
+    call_id: int, phone: str, prompt: str, leg: str = "customer", extra_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Triggers outbound phone call via Sarvam AI Voice Agent (apps.sarvam.ai / Samvaad platform)."""
+    if not (config.SARVAM_API_KEY and config.SARVAM_ORG_ID and config.SARVAM_WORKSPACE_ID):
+        logger.warning("Sarvam AI credentials (API key/org/workspace) not fully configured; falling back to simulator.")
+        return {"provider": "simulator", "call_id": f"sim-sarvam-{leg}-{call_id}"}
+
+    url = f"https://apps.sarvam.ai/api/outbounds/v1/orgs/{config.SARVAM_ORG_ID}/workspaces/{config.SARVAM_WORKSPACE_ID}/outbounds"
+    webhook_url = f"{config.BACKEND_BASE_URL}/api/webhooks/ai-calling/sarvam?call_id={call_id}&leg={leg}"
+
+    raw_phone = str(phone).strip()
+    digits = re.sub(r"[^\d]", "", raw_phone)
+    formatted_phone = "+91" + digits[-10:] if len(digits) >= 10 else "+91" + digits
+
+    app_config: Dict[str, Any] = {
+        "app_id": config.SARVAM_APP_ID or "mistribhaiya-call-agent",
+        "app_version": 1,
+    }
+    if config.SARVAM_CONNECTION_ID or config.SARVAM_AGENT_PHONE:
+        conn: Dict[str, Any] = {}
+        if config.SARVAM_CONNECTION_ID:
+            conn["connection_id"] = config.SARVAM_CONNECTION_ID
+        if config.SARVAM_AGENT_PHONE:
+            conn["agent_phone_number"] = config.SARVAM_AGENT_PHONE
+        app_config["connection_config"] = conn
+
+    payload = {
+        "app_config": app_config,
+        "user_config": {
+            "user_phone_number": formatted_phone,
+        },
+        "webhook_config": {
+            "url": webhook_url,
+        },
+        "context": {
+            "call_id": call_id,
+            "leg": leg,
+            "speech_prompt": prompt,
+            **(extra_context or {}),
+        },
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "X-API-Key": config.SARVAM_API_KEY,
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        res = json.loads(resp.read().decode("utf-8"))
+        attempt_id = res.get("attempt_id") or res.get("id") or f"sarvam-{call_id}-{int(time.time())}"
+        logger.info("Sarvam AI outbound call initiated: attempt_id=%s call_id=#%s leg=%s", attempt_id, call_id, leg)
+        return {"provider": "sarvam", "call_id": attempt_id}
 
 
 # ----------------- Vapi AI Integration Helpers -----------------
