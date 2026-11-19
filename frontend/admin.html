@@ -1005,41 +1005,11 @@ function renderOverview() {
         <h1>Overview Dashboard</h1>
         <p>Firebase और Render से लाइव वास्तविक डेटा एवं गतिविधियाँ</p>
       </div>
-      <div class="header-actions" style="position:relative;">
-        <div style="position:relative;display:inline-block;">
-          <button class="btn-action primary" onclick="toggleUploadDropdown(event)" style="background:#0f766e;color:#fff;padding:9px 18px;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px;border-radius:8px;box-shadow:0 2px 6px rgba(15,118,110,0.25);cursor:pointer;border:none;">
-            <span style="font-size:16px;">📤</span>
-            <span>Upload (अपलोड)</span>
-            <span style="font-size:10px;margin-left:2px;">▼</span>
-          </button>
-          <div id="uploadDropdownMenu" style="display:none;position:absolute;right:0;top:100%;margin-top:6px;background:#ffffff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1);z-index:999;min-width:270px;padding:6px;overflow:hidden;">
-            <div style="padding:8px 12px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #f1f5f9;">
-              मैनुअल प्रोफ़ाइल अपलोड (कीपैड फोन)
-            </div>
-            <button onclick="openManualUploadModal('worker')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:10px 12px;border:none;background:transparent;cursor:pointer;border-radius:8px;font-size:13.5px;font-weight:600;color:#0f172a;" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='transparent'">
-              <span style="font-size:20px;">👷</span>
-              <div>
-                <div style="font-weight:700;color:#166534;">Upload Mistri (मिस्त्री / मजदूर)</div>
-                <div style="font-size:11px;color:#64748b;">बिना स्मार्टफ़ोन वाले मिस्त्री को लाइव जोड़ें</div>
-              </div>
-            </button>
-            <button onclick="openManualUploadModal('contractor')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:10px 12px;border:none;background:transparent;cursor:pointer;border-radius:8px;font-size:13.5px;font-weight:600;color:#0f172a;margin-top:3px;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='transparent'">
-              <span style="font-size:20px;">🏢</span>
-              <div>
-                <div style="font-weight:700;color:#1e40af;">Upload Thekedar (ठेकेदार)</div>
-                <div style="font-size:11px;color:#64748b;">फर्म, क्रू और बजट प्रोफाइल बनाएं</div>
-              </div>
-            </button>
-            <div style="border-top:1px solid #f1f5f9;margin:4px 0;"></div>
-            <button onclick="openManualUploadModal('bulk')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:9px 12px;border:none;background:transparent;cursor:pointer;border-radius:8px;font-size:13px;font-weight:600;color:#475569;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-              <span style="font-size:18px;">📁</span>
-              <div>
-                <div style="font-weight:600;">Bulk CSV Upload</div>
-                <div style="font-size:11px;color:#64748b;">एक्सेल शीट से कई मिस्त्री एक साथ जोड़ें</div>
-              </div>
-            </button>
-          </div>
-        </div>
+      <div class="header-actions">
+        <button class="btn-action primary" onclick="openManualUploadModal()" style="background:#0f766e;color:#fff;padding:9px 20px;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px;border-radius:8px;box-shadow:0 2px 6px rgba(15,118,110,0.25);cursor:pointer;border:none;">
+          <span style="font-size:16px;">📤</span>
+          <span>Upload Bulk CSV (बल्क अपलोड)</span>
+        </button>
       </div>
     </div>
 
@@ -2320,29 +2290,22 @@ async function downloadAllSummaryCsv() {
   }
 }
 
-// ----------------- MANUAL MISTRI & THEKEDAR UPLOAD -----------------
-let activeUploadTab = "worker";
+// ----------------- BULK CSV UPLOAD (MISTRI & THEKEDAR) -----------------
+let activeUploadRole = "worker";
 
-function toggleUploadDropdown(e) {
-  if (e) e.stopPropagation();
-  const menu = document.getElementById("uploadDropdownMenu");
-  if (!menu) return;
-  const isShown = menu.style.display === "block";
-  menu.style.display = isShown ? "none" : "block";
-}
+const WORKER_CSV_SAMPLE = `name,phone,skills,daily_rate,experience_years,state,district,tehsil,village,distance_km
+रामू राजमिस्त्री,9876543210,mason,650,4,Uttar Pradesh,Kanpur Nagar,Ghatampur,Bhauti,15
+श्यामू हेल्पर,9876543211,labour,500,2,Uttar Pradesh,Kanpur Nagar,Bilhaur,Panki,10
+दिनेश पेंटर,9876543212,painter,600,3,Uttar Pradesh,Etawah,Sadar,Shiv Colony,20
+सुनील इलेक्ट्रीशियन,9876543213,electrician,700,5,Uttar Pradesh,Gautam Buddha Nagar,Noida,Sector 62,25`;
 
-document.addEventListener("click", (e) => {
-  const menu = document.getElementById("uploadDropdownMenu");
-  if (menu && menu.style.display === "block") {
-    menu.style.display = "none";
-  }
-});
+const CONTRACTOR_CSV_SAMPLE = `name,company,phone,skills,min_budget,crew_count,experience_years,state,district,tehsil,village,distance_km
+सतीश ठेकेदार,सतीश कंस्ट्रक्शन फर्म,9876543220,house_construction;rcc_slab,35000,15,6,Uttar Pradesh,Kanpur Nagar,Kalyanpur,Bhauti,30
+राकेश बिल्डर्स,राकेश कंस्ट्रक्शन,9876543221,civil;masonry,50000,20,8,Uttar Pradesh,Etawah,Sadar,Main City,40`;
 
-function openManualUploadModal(tab = "worker") {
-  const menu = document.getElementById("uploadDropdownMenu");
-  if (menu) menu.style.display = "none";
-  activeUploadTab = tab;
+function openManualUploadModal() {
   const modal = document.getElementById("manualUploadModal");
+  if (!modal) return;
   modal.style.display = "flex";
   renderUploadModalContent();
 }
@@ -2352,378 +2315,122 @@ function closeManualUploadModal() {
   if (modal) modal.style.display = "none";
 }
 
+function switchUploadRole(role) {
+  activeUploadRole = role;
+  renderUploadModalContent();
+}
+
 function renderUploadModalContent() {
   const modal = document.getElementById("manualUploadModal");
   if (!modal) return;
 
+  const isWorker = activeUploadRole === "worker";
+
   modal.innerHTML = `
-    <div class="login-box" style="max-width:720px;width:95%;max-height:92vh;overflow-y:auto;text-align:left;position:relative;padding:24px;border-radius:18px;">
-      <!-- Modal Header -->
+    <div class="login-box" style="max-width:780px;width:95%;max-height:92vh;overflow-y:auto;text-align:left;position:relative;padding:26px;border-radius:18px;">
+      <!-- Header -->
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1.5px solid #f1f5f9;padding-bottom:14px;margin-bottom:18px;">
         <div style="display:flex;align-items:center;gap:12px;">
-          <div style="width:44px;height:44px;border-radius:10px;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;">
+          <div style="width:46px;height:46px;border-radius:12px;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;">
             📤
           </div>
           <div>
-            <h2 style="font-size:18px;font-weight:800;color:#0f172a;margin:0;">मैनुअल प्रोफ़ाइल अपलोड (कीपैड फोन यूज़र्स)</h2>
-            <div style="font-size:12px;color:#64748b;margin-top:2px;">
-              डेटा सीधे SQLite व Firebase Firestore में लाइव जुड़ जाएगा।
+            <h2 style="font-size:18.5px;font-weight:800;color:#0f172a;margin:0;">बल्क प्रोफ़ाइल अपलोड (Bulk CSV Upload)</h2>
+            <div style="font-size:12.5px;color:#64748b;margin-top:2px;">
+              कीपैड फोन वाले मिस्त्री व ठेकेदारों का डेटा सीधे SQLite व Firebase Firestore में लाइव सिंक करें।
             </div>
           </div>
         </div>
-        <button onclick="closeManualUploadModal()" style="background:#f1f5f9;border:none;width:32px;height:32px;border-radius:50%;font-size:16px;cursor:pointer;font-weight:700;color:#475569;">✕</button>
+        <button onclick="closeManualUploadModal()" style="background:#f1f5f9;border:none;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer;font-weight:700;color:#475569;display:flex;align-items:center;justify-content:center;">✕</button>
       </div>
 
-      <!-- Navigation Tabs -->
-      <div style="display:flex;gap:8px;background:#f1f5f9;padding:4px;border-radius:10px;margin-bottom:20px;">
-        <button onclick="switchUploadTab('worker')" style="flex:1;padding:9px;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;${activeUploadTab === 'worker' ? 'background:#fff;color:#0f766e;box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent;color:#64748b;'}">
-          👷 मिस्त्री / मजदूर (Mistri)
+      <!-- Role Selector (Workers vs Contractors) -->
+      <div style="display:flex;gap:10px;margin-bottom:18px;">
+        <button onclick="switchUploadRole('worker')" style="flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;border:2px solid ${isWorker ? '#0f766e' : '#e2e8f0'};background:${isWorker ? '#f0fdf4' : '#fff'};color:${isWorker ? '#0f766e' : '#64748b'};">
+          <span style="font-size:18px;">👷</span> <span>मिस्त्री / मजदूर अपलोड (Workers)</span>
         </button>
-        <button onclick="switchUploadTab('contractor')" style="flex:1;padding:9px;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;${activeUploadTab === 'contractor' ? 'background:#fff;color:#0f766e;box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent;color:#64748b;'}">
-          🏢 ठेकेदार (Thekedar)
-        </button>
-        <button onclick="switchUploadTab('bulk')" style="flex:1;padding:9px;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;${activeUploadTab === 'bulk' ? 'background:#fff;color:#0f766e;box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent;color:#64748b;'}">
-          📁 Bulk CSV अपलोड
+        <button onclick="switchUploadRole('contractor')" style="flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;border:2px solid ${!isWorker ? '#0f766e' : '#e2e8f0'};background:${!isWorker ? '#eff6ff' : '#fff'};color:${!isWorker ? '#1e40af' : '#64748b'};">
+          <span style="font-size:18px;">🏢</span> <span>ठेकेदार अपलोड (Contractors)</span>
         </button>
       </div>
 
-      <!-- Tab Content Area -->
-      <div id="uploadTabBody">
-        ${activeUploadTab === 'worker' ? renderWorkerUploadForm() : (activeUploadTab === 'contractor' ? renderContractorUploadForm() : renderBulkUploadForm())}
-      </div>
-    </div>
-  `;
-}
-
-function switchUploadTab(tab) {
-  activeUploadTab = tab;
-  renderUploadModalContent();
-}
-
-function renderWorkerUploadForm() {
-  return `
-    <form onsubmit="submitManualWorker(event)">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:14px;margin-bottom:14px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">मिस्त्री / मजदूर का नाम *</label>
-          <input type="text" id="mName" placeholder="उदा. राम प्रकाश" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
+      <!-- Location & Columns Structure Guide Card -->
+      <div style="background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:12px;padding:16px;margin-bottom:18px;">
+        <div style="font-weight:700;font-size:13.5px;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <span>📍 CSV कॉलम संरचना (राज्य, जिला, तहसील, गाँव, दूरी के साथ):</span>
+          <button onclick="downloadSampleBulkCsv('${activeUploadRole}')" style="background:#0f766e;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;">
+            📥 तैयार सैंपल CSV फाइल डाउनलोड करें
+          </button>
         </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">10-डिजिट मोबाइल नंबर (कीपैड फोन) *</label>
-          <input type="tel" id="mPhone" placeholder="उदा. 9876543210" required maxlength="10" pattern="[0-9]{10}" style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-      </div>
-
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:6px;">हुनर / काम के प्रकार (Skills) *</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="mason" checked> राजमिस्त्री (Mason)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="labour" checked> मजदूर / हेल्पर (Labour)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="painter"> पेंटर (Painter)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="plumber"> प्लंबर (Plumber)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="electrician"> इलेक्ट्रीशियन (Electrician)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="tiles"> टाइल्स मिस्त्री (Tiles)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="carpenter"> बढ़ई (Carpenter)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="welder"> वेल्डर (Welder)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="mSkill" value="pop"> पीओपी / सीलिंग (POP)
-          </label>
+        <div style="overflow-x:auto;">
+          <table style="font-size:12px;border:1px solid #e2e8f0;background:#fff;border-radius:6px;width:100%;">
+            <thead>
+              <tr style="background:#f1f5f9;color:#334155;">
+                <th style="padding:6px 10px;">कॉलम नाम</th>
+                <th style="padding:6px 10px;">विवरण</th>
+                <th style="padding:6px 10px;">उदाहरण डेटा (Sample)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="padding:5px 10px;"><code>name</code></td><td style="padding:5px 10px;">नाम</td><td style="padding:5px 10px;">रामू राजमिस्त्री</td></tr>
+              ${!isWorker ? '<tr><td style="padding:5px 10px;"><code>company</code></td><td style="padding:5px 10px;">कंपनी/फर्म का नाम</td><td style="padding:5px 10px;">सतीश कंस्ट्रक्शन फर्म</td></tr>' : ''}
+              <tr><td style="padding:5px 10px;"><code>phone</code></td><td style="padding:5px 10px;">10-अंक का मोबाइल नंबर</td><td style="padding:5px 10px;">9876543210</td></tr>
+              <tr><td style="padding:5px 10px;"><code>skills</code></td><td style="padding:5px 10px;">हुनर / काम के प्रकार</td><td style="padding:5px 10px;">${isWorker ? 'mason,labour,painter' : 'house_construction,rcc_slab'}</td></tr>
+              <tr><td style="padding:5px 10px;"><code>${isWorker ? 'daily_rate' : 'min_budget'}</code></td><td style="padding:5px 10px;">${isWorker ? 'दहाड़ी (₹)' : 'न्यूनतम प्रोजेक्ट बजट (₹)'}</td><td style="padding:5px 10px;">${isWorker ? '600' : '35000'}</td></tr>
+              ${!isWorker ? '<tr><td style="padding:5px 10px;"><code>crew_count</code></td><td style="padding:5px 10px;">क्रू / लेबर संख्या</td><td style="padding:5px 10px;">15</td></tr>' : ''}
+              <tr><td style="padding:5px 10px;"><code>experience_years</code></td><td style="padding:5px 10px;">अनुभव (वर्ष)</td><td style="padding:5px 10px;">4</td></tr>
+              <tr style="background:#f0fdf4;"><td style="padding:5px 10px;"><b><code>state</code></b></td><td style="padding:5px 10px;"><b>राज्य (State)</b></td><td style="padding:5px 10px;">Uttar Pradesh</td></tr>
+              <tr style="background:#f0fdf4;"><td style="padding:5px 10px;"><b><code>district</code></b></td><td style="padding:5px 10px;"><b>जिला (Jila)</b></td><td style="padding:5px 10px;">Kanpur Nagar (या Etawah, Noida)</td></tr>
+              <tr style="background:#f0fdf4;"><td style="padding:5px 10px;"><b><code>tehsil</code></b></td><td style="padding:5px 10px;"><b>तहसील (Tehsil)</b></td><td style="padding:5px 10px;">Ghatampur (या Bilhaur, Sadar)</td></tr>
+              <tr style="background:#f0fdf4;"><td style="padding:5px 10px;"><b><code>village</code></b></td><td style="padding:5px 10px;"><b>गाँव / इलाका (Village)</b></td><td style="padding:5px 10px;">Bhauti (या Panki, Kalyanpur)</td></tr>
+              <tr style="background:#fefce8;"><td style="padding:5px 10px;"><b><code>distance_km</code></b></td><td style="padding:5px 10px;"><b>काम करने की अधिकतम दूरी (KM)</b></td><td style="padding:5px 10px;">15</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:14px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">दहाड़ी (₹ / दिन)</label>
-          <input type="number" id="mRate" value="600" min="100" max="10000" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">अनुभव (वर्ष)</label>
-          <input type="number" id="mExp" value="3" min="0" max="50" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">काम की दूरी (Radius KM)</label>
-          <input type="number" id="mRadius" value="15" min="1" max="100" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:14px;margin-bottom:14px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">गाँव / कस्बा / शहर का नाम *</label>
-          <input type="text" id="mVillage" value="Bhauti, Kanpur" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <label style="font-size:12.5px;font-weight:700;margin:0;">GPS लोकेशन (Lat, Lng)</label>
-            <button type="button" onclick="useCurrentGps('mLat', 'mLng')" style="border:none;background:none;color:#0f766e;font-size:11.5px;font-weight:700;cursor:pointer;text-decoration:underline;">📍 मेरी GPS लोकेशन लें</button>
-          </div>
-          <div style="display:flex;gap:8px;">
-            <input type="number" step="any" id="mLat" value="26.4499" placeholder="Latitude" style="width:50%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-            <input type="number" step="any" id="mLng" value="80.3319" placeholder="Longitude" style="width:50%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-          </div>
-        </div>
-      </div>
-
-      <!-- Toggles -->
-      <div style="display:flex;gap:20px;margin-bottom:18px;background:#f0fdf4;padding:12px 16px;border-radius:8px;border:1px solid #bbf7d0;flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#166534;cursor:pointer;">
-          <input type="checkbox" id="mFree" checked style="width:16px;height:16px;">
-          🟢 तुरंत Free दिखाएं (Free Now - ग्राहक को तुरंत दिखेगा)
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#166534;cursor:pointer;">
-          <input type="checkbox" id="mVerified" checked style="width:16px;height:16px;">
-          ✔ वेरिफाइड बैज (Verified Worker)
-        </label>
-      </div>
-
-      <div style="display:flex;justify-content:flex-end;gap:12px;">
-        <button type="button" onclick="closeManualUploadModal()" style="padding:10px 18px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-weight:600;font-size:13.5px;cursor:pointer;">रद्द करें</button>
-        <button type="submit" id="btnSubmitWorker" style="padding:10px 22px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:6px;">
-          🚀 मिस्त्री प्रोफाइल सेव करें और लाइव करें
-        </button>
-      </div>
-    </form>
-  `;
-}
-
-function renderContractorUploadForm() {
-  return `
-    <form onsubmit="submitManualContractor(event)">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:14px;margin-bottom:14px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">ठेकेदार का नाम *</label>
-          <input type="text" id="cName" placeholder="उदा. सतीश कुमार" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">कंपनी / फर्म का नाम *</label>
-          <input type="text" id="cCompany" placeholder="उदा. सतीश कंस्ट्रक्शन फर्म" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:14px;margin-bottom:14px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">10-डिजिट मोबाइल नंबर *</label>
-          <input type="tel" id="cPhone" placeholder="उदा. 9837101839" required maxlength="10" pattern="[0-9]{10}" style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">गाँव / शहर / जिला *</label>
-          <input type="text" id="cVillage" value="Kanpur Nagar, UP" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-      </div>
-
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:6px;">ठेकेदारी के कार्य (Specialization) *</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="cSkill" value="house_construction" checked> मकान निर्माण (House Construction)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="cSkill" value="rcc_slab" checked> आरसीसी ढलाई (RCC Slab)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="cSkill" value="masonry"> चिनाई व प्लास्टर (Masonry)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="cSkill" value="tiles"> टाइल व मार्बल फिटिंग
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="cSkill" value="plumbing"> सम्पूर्ण प्लंबिंग वर्क
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;">
-            <input type="checkbox" name="cSkill" value="electrical"> वायरिंग व बिजली वर्क
-          </label>
-        </div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:14px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">न्यूनतम बजट (₹ Minimum Budget)</label>
-          <input type="number" id="cBudget" value="30000" min="5000" max="10000000" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">क्रू / मजदूरों की संख्या</label>
-          <input type="number" id="cCrew" value="12" min="1" max="200" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:12.5px;font-weight:700;">अनुभव (वर्ष)</label>
-          <input type="number" id="cExp" value="6" min="0" max="50" required style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-        </div>
-      </div>
-
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px;">फर्म का विवरण (About / Bio)</label>
-        <input type="text" id="cAbout" value="मकान, दुकान निर्माण और सभी प्रकार की लेबर व मिस्त्री सप्लाई का अनुभवी कार्य।" style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
-      </div>
-
-      <div style="display:flex;gap:20px;margin-bottom:18px;background:#eff6ff;padding:12px 16px;border-radius:8px;border:1px solid #bfdbfe;">
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#1e40af;cursor:pointer;">
-          <input type="checkbox" id="cVerified" checked style="width:16px;height:16px;">
-          ✔ वेरिफाइड ठेकेदार (Verified Contractor Badge)
-        </label>
-      </div>
-
-      <div style="display:flex;justify-content:flex-end;gap:12px;">
-        <button type="button" onclick="closeManualUploadModal()" style="padding:10px 18px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-weight:600;font-size:13.5px;cursor:pointer;">रद्द करें</button>
-        <button type="submit" id="btnSubmitContractor" style="padding:10px 22px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:6px;">
-          🚀 ठेकेदार प्रोफाइल सेव करें और लाइव करें
-        </button>
-      </div>
-    </form>
-  `;
-}
-
-function renderBulkUploadForm() {
-  return `
-    <div>
-      <div style="background:#f8fafc;padding:14px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:16px;font-size:13px;line-height:1.6;">
-        <b>💡 निर्देश:</b> आप एक साथ कई मिस्त्री या ठेकेदारों का डेटा CSV फाइल के माध्यम से अपलोड कर सकते हैं।<br>
-        फाइल में कॉलम होने चाहिए: <code>name, phone, skills, daily_rate, village, experience_years</code>
-      </div>
-
-      <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
-        <label style="font-size:13px;font-weight:700;">अपलोड रोल चुनें:</label>
-        <select id="bulkRole" style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;">
-          <option value="worker">👷 मिस्त्री / मजदूर (Workers)</option>
-          <option value="contractor">🏢 ठेकेदार (Contractors)</option>
-        </select>
-        <button type="button" onclick="downloadSampleBulkCsv()" style="border:none;background:none;color:#0f766e;font-size:12.5px;font-weight:700;text-decoration:underline;cursor:pointer;">
-          📥 सैंपल CSV डाउनलोड करें
-        </button>
-      </div>
-
-      <div style="border:2px dashed #cbd5e1;border-radius:12px;padding:24px;text-align:center;margin-bottom:16px;background:#fafafa;">
-        <div style="font-size:32px;margin-bottom:8px;">📄</div>
-        <div style="font-weight:700;color:#334155;margin-bottom:4px;">CSV फाइल चुनें</div>
-        <div style="font-size:12px;color:#64748b;margin-bottom:14px;">(.csv फाइल जिसमें मिस्त्री/ठेकेदारों का नाम व नंबर हो)</div>
+      <!-- File Upload Box -->
+      <div style="border:2px dashed #94a3b8;border-radius:12px;padding:20px;text-align:center;margin-bottom:16px;background:#fcfcfc;">
         <input type="file" id="bulkCsvFileInput" accept=".csv" style="display:none;" onchange="handleBulkFileSelected(event)">
-        <button type="button" onclick="document.getElementById('bulkCsvFileInput').click()" style="padding:9px 18px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
-          📁 फाइल चुनें (.csv)
+        <button type="button" onclick="document.getElementById('bulkCsvFileInput').click()" style="padding:9px 20px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+          📁 CSV फाइल चुनें (.csv File)
         </button>
         <div id="bulkFileName" style="margin-top:8px;font-size:12.5px;font-weight:600;color:#16a34a;"></div>
       </div>
 
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px;">या सीधे CSV डेटा यहाँ पेस्ट करें:</label>
-        <textarea id="bulkCsvText" placeholder="name,phone,skills,daily_rate,village,experience_years&#10;राम प्रकाश,9876543210,mason,600,Bhauti,4&#10;श्यामू,9876543211,labour,500,Panki,2" rows="5" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-family:monospace;font-size:12px;box-sizing:border-box;"></textarea>
+      <!-- CSV Direct Textarea Input -->
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <label style="font-size:13px;font-weight:700;color:#334155;">सीधे CSV डेटा यहाँ पेस्ट या एडिट करें:</label>
+          <button type="button" onclick="resetCsvSampleText()" style="border:none;background:none;color:#0f766e;font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline;">
+            🔄 डिफ़ॉल्ट सैंपल रिसेट करें
+          </button>
+        </div>
+        <textarea id="bulkCsvText" rows="6" style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-family:monospace;font-size:12px;line-height:1.5;box-sizing:border-box;background:#fff;">${isWorker ? WORKER_CSV_SAMPLE : CONTRACTOR_CSV_SAMPLE}</textarea>
       </div>
 
-      <div style="display:flex;justify-content:flex-end;gap:12px;">
+      <!-- Actions Footer -->
+      <div style="display:flex;justify-content:flex-end;gap:12px;border-top:1px solid #f1f5f9;padding-top:16px;">
         <button type="button" onclick="closeManualUploadModal()" style="padding:10px 18px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-weight:600;font-size:13.5px;cursor:pointer;">रद्द करें</button>
-        <button type="button" id="btnSubmitBulk" onclick="processBulkUpload()" style="padding:10px 22px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:6px;">
-          🚀 बल्क डेटा अपलोड करें
+        <button type="button" id="btnSubmitBulk" onclick="processBulkUpload()" style="padding:10px 24px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 2px 5px rgba(22,163,74,0.3);">
+          <span>🚀</span>
+          <span>बल्क डेटा अपलोड व Firebase में लाइव सिंक करें</span>
         </button>
       </div>
     </div>
   `;
 }
 
-function useCurrentGps(latId, lngId) {
-  if (!navigator.geolocation) {
-    alert("आपके ब्राउज़र में GPS उपलब्ध नहीं है!");
-    return;
-  }
-  showToast("📍 वर्तमान GPS लोकेशन ली जा रही है...");
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      document.getElementById(latId).value = pos.coords.latitude.toFixed(6);
-      document.getElementById(lngId).value = pos.coords.longitude.toFixed(6);
-      showToast("✅ GPS लोकेशन भर दी गई!");
-    },
-    (err) => {
-      showToast("लोकेशन नहीं मिल सकी: " + err.message);
-    },
-    { enableHighAccuracy: true, timeout: 8000 }
-  );
-}
-
-async function submitManualWorker(e) {
-  e.preventDefault();
-  const name = document.getElementById("mName").value.trim();
-  const phone = document.getElementById("mPhone").value.trim();
-  const daily_rate = parseInt(document.getElementById("mRate").value, 10);
-  const experience_years = parseInt(document.getElementById("mExp").value, 10);
-  const radius_km = parseFloat(document.getElementById("mRadius").value);
-  const village = document.getElementById("mVillage").value.trim();
-  const lat = parseFloat(document.getElementById("mLat").value) || 26.4499;
-  const lng = parseFloat(document.getElementById("mLng").value) || 80.3319;
-  const free_now = document.getElementById("mFree").checked;
-  const verified = document.getElementById("mVerified").checked;
-
-  const skillCheckboxes = document.querySelectorAll("input[name='mSkill']:checked");
-  const skills = Array.from(skillCheckboxes).map(c => c.value);
-
-  const btn = document.getElementById("btnSubmitWorker");
-  btn.disabled = true;
-  btn.textContent = "सेव हो रहा है...";
-
-  try {
-    const res = await api("/admin/workers/create", "POST", {
-      name, phone, skills, daily_rate, experience_years, radius_km, village, lat, lng, free_now, verified
-    });
-    showToast(`✅ मिस्त्री '${name}' (${phone}) सफलतापूर्वक लाइव जुड़ गया!`);
-    closeManualUploadModal();
-    fetchAllData();
-  } catch (err) {
-    alert("मिस्त्री जोड़ने में त्रुटि: " + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "🚀 मिस्त्री प्रोफाइल सेव करें और लाइव करें";
-  }
-}
-
-async function submitManualContractor(e) {
-  e.preventDefault();
-  const name = document.getElementById("cName").value.trim();
-  const company = document.getElementById("cCompany").value.trim();
-  const phone = document.getElementById("cPhone").value.trim();
-  const village = document.getElementById("cVillage").value.trim();
-  const min_budget = parseInt(document.getElementById("cBudget").value, 10);
-  const crew_count = parseInt(document.getElementById("cCrew").value, 10);
-  const experience_years = parseInt(document.getElementById("cExp").value, 10);
-  const about = document.getElementById("cAbout").value.trim();
-  const verified = document.getElementById("cVerified").checked;
-
-  const skillCheckboxes = document.querySelectorAll("input[name='cSkill']:checked");
-  const skills = Array.from(skillCheckboxes).map(c => c.value);
-
-  const btn = document.getElementById("btnSubmitContractor");
-  btn.disabled = true;
-  btn.textContent = "सेव हो रहा है...";
-
-  try {
-    const res = await api("/admin/contractors/create", "POST", {
-      name, company, phone, skills, village, min_budget, crew_count, experience_years, about, verified
-    });
-    showToast(`✅ ठेकेदार '${name}' (${company}) सफलतापूर्वक लाइव जुड़ गया!`);
-    closeManualUploadModal();
-    fetchAllData();
-  } catch (err) {
-    alert("ठेकेदार जोड़ने में त्रुटि: " + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "🚀 ठेकेदार प्रोफाइल सेव करें और लाइव करें";
-  }
+function resetCsvSampleText() {
+  const isWorker = activeUploadRole === "worker";
+  const ta = document.getElementById("bulkCsvText");
+  if (ta) ta.value = isWorker ? WORKER_CSV_SAMPLE : CONTRACTOR_CSV_SAMPLE;
 }
 
 function handleBulkFileSelected(e) {
   const file = e.target.files[0];
   if (!file) return;
-  document.getElementById("bulkFileName").textContent = `चयनित फाइल: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+  document.getElementById("bulkFileName").textContent = `✅ चयनित फाइल: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
   const reader = new FileReader();
   reader.onload = function(evt) {
     document.getElementById("bulkCsvText").value = evt.target.result;
@@ -2731,22 +2438,22 @@ function handleBulkFileSelected(e) {
   reader.readAsText(file);
 }
 
-function downloadSampleBulkCsv() {
-  const csvContent = "name,phone,skills,daily_rate,village,experience_years\n" +
-                     "राम प्रकाश,9876543210,mason,600,Bhauti Kanpur,4\n" +
-                     "दिनेश पेंटर,9876543211,painter,550,Panki,3\n" +
-                     "सुनील इलेक्ट्रीशियन,9876543212,electrician,700,Noida Sector 62,5";
-  const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+function downloadSampleBulkCsv(role) {
+  const isWorker = role === "worker";
+  const content = isWorker ? WORKER_CSV_SAMPLE : CONTRACTOR_CSV_SAMPLE;
+  const filename = isWorker ? "sample_workers_state_jila_tehsil.csv" : "sample_contractors_state_jila_tehsil.csv";
+  const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "sample_workers_upload.csv";
+  a.download = filename;
   a.click();
+  showToast(`📥 ${filename} डाउनलोड हो गया!`);
 }
 
 async function processBulkUpload() {
-  const role = document.getElementById("bulkRole").value;
-  const rawText = document.getElementById("bulkCsvText").value.trim();
+  const role = activeUploadRole;
+  const rawText = document.getElementById("bulkCsvText")?.value.trim() || "";
   if (!rawText) {
     alert("कृपया CSV फाइल चुनें या CSV टेक्स्ट दर्ज करें!");
     return;
@@ -2778,18 +2485,18 @@ async function processBulkUpload() {
 
   const btn = document.getElementById("btnSubmitBulk");
   btn.disabled = true;
-  btn.textContent = `अपलोड हो रहा है (${items.length} रिकॉर्ड्स)...`;
+  btn.textContent = `अपलोड व सिंक हो रहा है (${items.length} रिकॉर्ड्स)...`;
 
   try {
     const res = await api("/admin/bulk-upload", "POST", { role, items });
-    showToast(`✅ ${res.created} प्रोफाइल सफलतापूर्वक जोड़ दिए गए!`);
+    showToast(`✅ ${res.created} प्रोफाइल (राज्य, जिला, तहसील सहित) सफलतापूर्वक जोड़ दिए गए!`);
     closeManualUploadModal();
     fetchAllData();
   } catch (err) {
     alert("बल्क अपलोड में त्रुटि: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "🚀 बल्क डेटा अपलोड करें";
+    btn.textContent = "🚀 बल्क डेटा अपलोड व Firebase में लाइव सिंक करें";
   }
 }
 

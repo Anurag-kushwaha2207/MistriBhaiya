@@ -1652,6 +1652,49 @@ def admin_create_contractor(req: AdminCreateContractorReq, u=Depends(current_use
     return {"ok": True, "contractor_id": uid, "name": name, "company": company, "phone": phone, "role": "contractor"}
 
 
+DISTRICT_COORDS = {
+    "kanpur": (26.4499, 80.3319),
+    "kanpur nagar": (26.4499, 80.3319),
+    "kanpur dehat": (26.3458, 79.9524),
+    "lucknow": (26.8467, 80.9462),
+    "etawah": (26.7769, 79.0238),
+    "auraiya": (26.4673, 79.5173),
+    "agra": (27.1767, 78.0081),
+    "noida": (28.5355, 77.3910),
+    "greater noida": (28.4744, 77.5040),
+    "ghaziabad": (28.6692, 77.4538),
+    "varanasi": (25.3176, 82.9739),
+    "banaras": (25.3176, 82.9739),
+    "prayagraj": (25.4358, 81.8463),
+    "allahabad": (25.4358, 81.8463),
+    "bareilly": (28.3670, 79.4304),
+    "aligarh": (27.8974, 78.0880),
+    "moradabad": (28.8386, 78.7733),
+    "meerut": (28.9845, 77.7064),
+    "gorakhpur": (26.7606, 83.3732),
+    "ayodhya": (26.7922, 82.1998),
+    "faizabad": (26.7730, 82.1460),
+    "jhansi": (25.4484, 78.5685),
+    "unnao": (26.5458, 80.4878),
+    "fatehpur": (25.9284, 80.8129),
+    "farrukhabad": (27.3826, 79.5843),
+    "mainpuri": (27.2285, 79.0253),
+    "firozabad": (27.1593, 78.3957),
+    "mathura": (27.4924, 77.6737)
+}
+
+def resolve_coords(district_str, tehsil_str, village_str, def_lat=None, def_lng=None):
+    if def_lat is not None and def_lng is not None:
+        try:
+            return float(def_lat), float(def_lng)
+        except Exception:
+            pass
+    search_text = f"{district_str} {tehsil_str} {village_str}".lower()
+    for d_name, coords in DISTRICT_COORDS.items():
+        if d_name in search_text:
+            return coords[0], coords[1]
+    return 26.4499, 80.3319
+
 class AdminBulkUploadReq(BaseModel):
     role: str = "worker"
     items: List[dict] = Field(default_factory=list)
@@ -1669,18 +1712,39 @@ def admin_bulk_upload(req: AdminBulkUploadReq, u=Depends(current_user)):
             if not phone_raw or len(phone_raw) < 10:
                 continue
             skills_val = item.get("skills") or item.get("Skills") or item.get("work") or ""
-            skills_list = [s.strip() for s in str(skills_val).split(",") if s.strip()]
-            village_val = str(item.get("village") or item.get("Village") or item.get("city") or item.get("address") or "")
+            skills_list = [s.strip() for s in str(skills_val).replace(";", ",").split(",") if s.strip()]
+            
+            # Structured location columns: state, district (jila), tehsil, village
+            state_val = str(item.get("state") or item.get("State") or item.get("rajya") or "Uttar Pradesh").strip()
+            district_val = str(item.get("district") or item.get("District") or item.get("jila") or item.get("zila") or "").strip()
+            tehsil_val = str(item.get("tehsil") or item.get("Tehsil") or item.get("tahsil") or "").strip()
+            village_val = str(item.get("village") or item.get("Village") or item.get("gaon") or item.get("locality") or item.get("city") or "").strip()
+
+            loc_parts = []
+            if village_val: loc_parts.append(village_val)
+            if tehsil_val: loc_parts.append(f"तहसील: {tehsil_val}")
+            if district_val: loc_parts.append(f"जिला: {district_val}")
+            if state_val: loc_parts.append(state_val)
+            full_location = ", ".join(loc_parts) if loc_parts else "Uttar Pradesh"
+
+            lat_val = item.get("lat") or item.get("latitude")
+            lng_val = item.get("lng") or item.get("longitude")
+            calc_lat, calc_lng = resolve_coords(district_val, tehsil_val, village_val, lat_val, lng_val)
+            dist_val = float(item.get("distance_km") or item.get("distance") or item.get("radius_km") or 15.0)
             
             if req.role == "contractor":
                 c_req = AdminCreateContractorReq(
                     name=name_raw,
-                    company=str(item.get("company") or item.get("Company") or ""),
+                    company=str(item.get("company") or item.get("Company") or f"{name_raw} कंस्ट्रक्शन"),
                     phone=phone_raw,
                     skills=skills_list,
-                    min_budget=int(item.get("min_budget") or item.get("budget") or 25000),
+                    min_budget=int(item.get("min_budget") or item.get("budget") or item.get("daily_rate") or 25000),
                     experience_years=int(item.get("experience_years") or item.get("experience") or 3),
-                    village=village_val,
+                    crew_count=int(item.get("crew_count") or item.get("crew") or 10),
+                    village=full_location,
+                    lat=calc_lat,
+                    lng=calc_lng,
+                    radius_km=dist_val,
                     verified=True
                 )
                 admin_create_contractor(c_req, u)
@@ -1691,7 +1755,10 @@ def admin_bulk_upload(req: AdminBulkUploadReq, u=Depends(current_user)):
                     skills=skills_list,
                     daily_rate=int(item.get("daily_rate") or item.get("rate") or 500),
                     experience_years=int(item.get("experience_years") or item.get("experience") or 2),
-                    village=village_val,
+                    village=full_location,
+                    lat=calc_lat,
+                    lng=calc_lng,
+                    radius_km=dist_val,
                     verified=True,
                     free_now=True
                 )
