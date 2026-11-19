@@ -521,6 +521,20 @@ def sync_project(project_id: int):
         logger.warning("Error fetching project %s for sync: %s", project_id, e)
 
 
+def sync_ai_call(call_id: int):
+    """Sync an AI call record to Firestore in real-time."""
+    try:
+        with db() as c:
+            call = c.execute("SELECT * FROM ai_calls WHERE id=?", (call_id,)).fetchone()
+            if not call:
+                return
+            data = dict(call)
+            data["updated_at"] = time.time()
+            push_to_firebase("ai_calls", str(call_id), data)
+    except Exception as e:
+        logger.warning("Error fetching ai_call %s for sync: %s", call_id, e)
+
+
 def sync_all_from_db():
     """Sync all existing users, profiles, jobs, bookings, and projects from local SQLite DB to Firebase Firestore."""
     def _run():

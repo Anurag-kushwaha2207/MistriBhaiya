@@ -41,6 +41,17 @@ EXOTEL_API_TOKEN = os.getenv("EXOTEL_API_TOKEN", "")
 EXOTEL_SUBDOMAIN = os.getenv("EXOTEL_SUBDOMAIN", "api.exotel.com")
 EXOTEL_EXOPHONE = os.getenv("EXOTEL_EXOPHONE", "")       # your virtual number (caller id for both legs)
 
+# AI Voice Calling Agent (Vapi / Exotel / Twilio / Simulator)
+AI_CALL_PROVIDER = os.getenv("AI_CALL_PROVIDER", "simulator") # simulator | vapi | exotel | twilio
+VAPI_API_KEY = os.getenv("VAPI_API_KEY", "")
+VAPI_PHONE_NUMBER_ID = os.getenv("VAPI_PHONE_NUMBER_ID", "")
+VAPI_CUSTOMER_ASSISTANT_ID = os.getenv("VAPI_CUSTOMER_ASSISTANT_ID", "")
+VAPI_WORKER_ASSISTANT_ID = os.getenv("VAPI_WORKER_ASSISTANT_ID", "")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "https://mistribaiya-api.onrender.com")
+
 # Rapido-style instant dispatch
 INSTANT_WAVE_SECONDS = float(os.getenv("INSTANT_WAVE_SECONDS", "30"))   # how long each wave of offers stays open
 INSTANT_WAVE_SIZE = int(os.getenv("INSTANT_WAVE_SIZE", "1"))            # offers sent per wave (nearest free workers first)

@@ -593,6 +593,7 @@
   <div class="nav-group-title">ORDERS & WORK</div>
   <ul class="nav-list">
     <li><a class="nav-item" onclick="navigate('bookings')">📅 Bookings (काम) <span class="nav-badge" id="nbBookings">0</span></a></li>
+    <li><a class="nav-item" onclick="navigate('ai-calls')">🤖 AI Calling & Jobs <span class="nav-badge info" id="nbAiCalls">0</span></a></li>
     <li><a class="nav-item" onclick="navigate('calls')">📞 Call Logs</a></li>
   </ul>
 
@@ -888,7 +889,7 @@ async function fetchAllData(silent = false) {
     const stats = await api("/admin/stats");
 
     // Fetch remaining resources in parallel
-    const [workers, customers, contractors, bookings, payments, calls, safety, health, settings] = await Promise.all([
+    const [workers, customers, contractors, bookings, payments, calls, safety, health, settings, jobsRes, aiCallsRes] = await Promise.all([
       api("/admin/workers").catch(() => ({ workers: [] })),
       api("/admin/customers").catch(() => ({ customers: [] })),
       api("/admin/contractors").catch(() => ({ contractors: [] })),
@@ -897,7 +898,9 @@ async function fetchAllData(silent = false) {
       api("/admin/calls").catch(() => ({ calls: [] })),
       api("/admin/safety").catch(() => ({ sos: [], reports: [] })),
       api("/admin/health").catch(() => null),
-      api("/admin/settings").catch(() => ({ booking_token_fee: 10 }))
+      api("/admin/settings").catch(() => ({ booking_token_fee: 10 })),
+      api("/admin/jobs").catch(() => ({ jobs: [] })),
+      api("/admin/ai-calls").catch(() => ({ calls: [], provider: "simulator" }))
     ]);
 
     globalData = {
@@ -909,7 +912,10 @@ async function fetchAllData(silent = false) {
       payments: payments.payments || [],
       calls: calls.calls || [],
       safety,
-      health
+      health,
+      jobs: jobsRes.jobs || [],
+      aiCalls: aiCallsRes.calls || [],
+      aiProvider: aiCallsRes.provider || "simulator"
     };
 
     if (settings && settings.booking_token_fee != null) {
@@ -923,6 +929,7 @@ async function fetchAllData(silent = false) {
     const nbB = document.getElementById("nbBookings");
     const nbS = document.getElementById("nbSos");
     const nbR = document.getElementById("nbReports");
+    const nbAi = document.getElementById("nbAiCalls");
 
     if (nbW) nbW.textContent = globalData.workers.length;
     if (nbC) nbC.textContent = globalData.customers.length;
@@ -930,6 +937,7 @@ async function fetchAllData(silent = false) {
     if (nbB) nbB.textContent = globalData.bookings.length;
     if (nbS) nbS.textContent = safety.sos.length;
     if (nbR) nbR.textContent = safety.reports.length;
+    if (nbAi) nbAi.textContent = globalData.jobs.length;
 
     // In silent real-time refresh, don't disrupt active typing
     const isTyping = document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA" || document.activeElement.tagName === "SELECT");
@@ -982,6 +990,7 @@ function renderCurrentTab() {
     case "customers": container.innerHTML = renderCustomers(); break;
     case "contractors": container.innerHTML = renderContractors(); break;
     case "bookings": container.innerHTML = renderBookings(); break;
+    case "ai-calls": container.innerHTML = renderAiCalling(); break;
     case "calls": container.innerHTML = renderCalls(); break;
     case "payments": container.innerHTML = renderPayments(); break;
     case "sos": container.innerHTML = renderSos(); break;
@@ -1618,6 +1627,320 @@ function renderPayments() {
       </table>
     </div>
   `;
+}
+
+// 6.5. AI Calling Agent & Customer Jobs
+function renderAiCalling() {
+  const jobs = globalData.jobs || [];
+  const aiCalls = globalData.aiCalls || [];
+  const provider = (globalData.aiProvider || "simulator").toUpperCase();
+  const connectedCount = aiCalls.filter(c => c.status === 'connected' || c.status === 'completed').length;
+
+  return `
+    <div class="page-header">
+      <div class="page-title">
+        <h1>🤖 AI Calling Agent & Customer Jobs (स्वचालित कॉलिंग व मैचिंग)</h1>
+        <p>मालिक के काम पोस्ट करने पर एडमिन एक क्लिक से AI एजेंट द्वारा ग्राहक से पुष्टि व मिस्त्री से कॉल कनेक्ट (Bridge) करा सकता है।</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-primary" style="background:#0f766e;" onclick="createSampleJob()">+ नमूना काम बनाएं (Test Job)</button>
+        <button class="btn-csv" onclick="downloadAiCallsCsv()">📥 Calls CSV</button>
+      </div>
+    </div>
+
+    <!-- AI Calling Highlights Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Total Customer Jobs</div>
+        <div class="val" style="color:#0f172a;">${jobs.length}</div>
+        <div class="sub">ग्राहकों द्वारा पोस्ट किए गए काम</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">AI Calls Initiated</div>
+        <div class="val" style="color:#2563eb;">${aiCalls.length}</div>
+        <div class="sub">शुरू की गई कुल वॉइस कॉल्स</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Successfully Connected</div>
+        <div class="val" style="color:#16a34a;">${connectedCount}</div>
+        <div class="sub">ग्राहक व मिस्त्री की सफल बातचीत</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Active Calling Provider</div>
+        <div class="val" style="color:#0f766e;font-size:18px;display:flex;align-items:center;gap:6px;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#16a34a;"></span>
+          ${esc(provider)}
+        </div>
+        <div class="sub">${provider === 'SIMULATOR' ? 'परीक्षण मोड (तुरंत टेस्ट करें)' : 'लाइव टेलीफोनी सक्रिय'}</div>
+      </div>
+    </div>
+
+    <!-- Section 1: Customer Jobs & AI Calling Initiation -->
+    <div style="background:#fff;border-radius:14px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #f1f5f9;padding-bottom:10px;">
+        <div>
+          <h2 style="font-size:16.5px;font-weight:800;color:#0f172a;margin:0;">1. ग्राहकों के पोस्टेड काम व सुयोग्य मिस्त्री (Jobs & Matched Workers)</h2>
+          <div style="font-size:12.5px;color:#64748b;margin-top:2px;">सुयोग्य मिस्त्री चुनें और 'Call Customer with AI' बटन दबाकर ग्राहक को स्वचालित कॉल लगाएं।</div>
+        </div>
+        <span class="badge info">${jobs.length} Jobs Posted</span>
+      </div>
+
+      ${jobs.length === 0 ? `
+        <div style="text-align:center;padding:36px;color:#64748b;">
+          <div style="font-size:32px;margin-bottom:8px;">📋</div>
+          <div style="font-weight:700;font-size:15px;color:#334155;">कोई काम अभी पोस्ट नहीं है।</div>
+          <p style="font-size:13px;margin:6px 0 16px;">परीक्षण करने हेतु ऊपर <b>'+ नमूना काम बनाएं'</b> बटन पर क्लिक करें।</p>
+          <button class="btn-primary" style="background:#0f766e;" onclick="createSampleJob()">+ अभी नमूना काम बनाएं (Create Test Job)</button>
+        </div>
+      ` : `
+        <div class="table-container" style="border:none;box-shadow:none;">
+          <table>
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th>Job ID</th>
+                <th>मालिक (Customer)</th>
+                <th>काम (Skill & Description)</th>
+                <th>पता व बजट</th>
+                <th>सुयोग्य मिस्त्री (Matched Workers)</th>
+                <th>AI कॉलिंग एक्शन</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${jobs.map(j => {
+                const ac = j.active_call;
+                const isCallActive = ac && ['initiated','customer_ringing','customer_answered','customer_accepted','worker_ringing','worker_accepted','connecting','connected'].includes(ac.status);
+                const matched = j.matched_workers || [];
+
+                return `
+                  <tr>
+                    <td><b>#${j.id}</b></td>
+                    <td>
+                      <b>${esc(j.customer_name || 'Homeowner')}</b>
+                      <br><a href="tel:${j.customer_phone}" style="color:#0f766e;text-decoration:none;font-size:12px;">📞 ${esc(j.customer_phone || '-')}</a>
+                    </td>
+                    <td>
+                      <span class="badge info">${esc(j.skill || '-')}</span>
+                      <div style="font-size:12px;color:#475569;margin-top:3px;max-width:220px;white-space:normal;">${esc(j.description || '-')}</div>
+                    </td>
+                    <td>
+                      <div style="font-size:12.5px;color:#334155;">📍 ${esc(j.address || '-')}</div>
+                      <b style="color:#16a34a;font-size:13px;">₹${j.budget || 0}</b>
+                    </td>
+                    <td style="min-width:240px;">
+                      ${matched.length === 0 ? '<span style="color:#94a3b8;font-size:12px;">कोई मिस्त्री मैच नहीं हुआ</span>' : `
+                        <select id="workerSelect_${j.id}" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:12.5px;background:#fff;" ${isCallActive ? 'disabled' : ''}>
+                          ${matched.map(w => `
+                            <option value="${w.id}">
+                              ${esc(w.name || 'Worker')} (${w.distance_km != null ? w.distance_km + ' km' : esc(w.village || 'Near')}) · ₹${w.daily_rate}/दिन · ⭐ ${w.rating_avg || 5.0} · ${w.status === 'free' ? 'FREE' : 'BUSY'}
+                            </option>
+                          `).join('')}
+                        </select>
+                      `}
+                    </td>
+                    <td>
+                      ${isCallActive ? `
+                        <div style="display:flex;flex-direction:column;gap:4px;">
+                          <span class="badge warning" style="animation:pulse 1.5s infinite;">⏳ कॉल जारी (${esc(ac.status)})</span>
+                          <small style="font-size:11px;color:#64748b;">(डुप्लीकेट कॉल रोकी गई)</small>
+                        </div>
+                      ` : `
+                        <button class="btn-action primary" style="background:#16a34a;white-space:nowrap;" onclick="initiateAiCallForJob(${j.id})" ${matched.length === 0 ? 'disabled' : ''}>
+                          📞 Call Customer with AI
+                        </button>
+                      `}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+
+    <!-- Section 2: Live AI Calls Monitor & Test Simulator -->
+    <div style="background:#fff;border-radius:14px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #f1f5f9;padding-bottom:10px;">
+        <div>
+          <h2 style="font-size:16.5px;font-weight:800;color:#0f172a;margin:0;">2. लाइव AI कॉल मॉनिटर व टेस्ट सिम्युलेटर (Live AI Call Monitor)</h2>
+          <div style="font-size:12.5px;color:#64748b;margin-top:2px;">प्रत्येक कॉल की स्थिति, ग्राहक/मिस्त्री का कीपैड (DTMF) रिस्पांस एवं लाइव कनेक्शन स्टेटस (Firebase में लाइव सिंक)।</div>
+        </div>
+        <span class="badge success">Firebase Real-time Sync</span>
+      </div>
+
+      ${aiCalls.length === 0 ? `
+        <div style="text-align:center;padding:24px;color:#64748b;font-size:13.5px;">
+          अभी तक कोई AI कॉल नहीं की गई है। ऊपर किसी काम के सामने <b>'Call Customer with AI'</b> दबाएं।
+        </div>
+      ` : `
+        <div class="table-container" style="border:none;box-shadow:none;">
+          <table>
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th>Call ID</th>
+                <th>मालिक (Customer)</th>
+                <th>मिस्त्री (Worker)</th>
+                <th>लाइव स्थिति (Status)</th>
+                <th>कीपैड (DTMF)</th>
+                <th>अवधि</th>
+                <th>समय</th>
+                <th>सिम्युलेटर टेस्ट कंट्रोल्स</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${aiCalls.map(c => {
+                const isActive = ['initiated','customer_ringing','customer_answered','customer_accepted','worker_ringing','worker_accepted','connecting','connected'].includes(c.status);
+                let badgeClass = 'neutral';
+                let statusLabel = c.status;
+
+                if (c.status === 'customer_ringing') { badgeClass = 'warning'; statusLabel = '🟡 ग्राहक को रिंग...'; }
+                else if (c.status === 'customer_answered') { badgeClass = 'info'; statusLabel = '🔵 ग्राहक ने उठाया'; }
+                else if (c.status === 'customer_accepted') { badgeClass = 'success'; statusLabel = '🟢 ग्राहक ने 1 दबाया (स्वीकृत)'; }
+                else if (c.status === 'customer_declined') { badgeClass = 'danger'; statusLabel = '🔴 ग्राहक ने 2 दबाया (अस्वीकृत)'; }
+                else if (c.status === 'worker_ringing') { badgeClass = 'warning'; statusLabel = '🟡 मिस्त्री को रिंग...'; }
+                else if (c.status === 'worker_accepted') { badgeClass = 'success'; statusLabel = '🟢 मिस्त्री ने 1 दबाया (स्वीकृत)'; }
+                else if (c.status === 'worker_declined') { badgeClass = 'danger'; statusLabel = '🔴 मिस्त्री अनुपलब्ध'; }
+                else if (c.status === 'connecting') { badgeClass = 'info'; statusLabel = '🟣 कॉल ब्रिजिंग...'; }
+                else if (c.status === 'connected') { badgeClass = 'success'; statusLabel = '🟢 कनेक्टेड (बातचीत जारी)'; }
+                else if (c.status === 'completed') { badgeClass = 'success'; statusLabel = '✔ कॉल पूर्ण'; }
+                else if (c.status === 'failed' || c.status === 'no_answer') { badgeClass = 'danger'; statusLabel = '✕ अनुत्तरित / विफल'; }
+
+                return `
+                  <tr>
+                    <td><b>#${c.id}</b></td>
+                    <td>
+                      <b>${esc(c.customer_name || 'Homeowner')}</b>
+                      <br><small style="color:#64748b;">${esc(c.customer_phone || '')}</small>
+                    </td>
+                    <td>
+                      <b>${esc(c.worker_name || 'Worker')}</b>
+                      <br><small style="color:#64748b;">${esc(c.worker_phone || '')}</small>
+                    </td>
+                    <td>
+                      <span class="badge ${badgeClass}" style="${isActive ? 'animation:pulse 1.8s infinite;' : ''}">
+                        ${statusLabel}
+                      </span>
+                      ${c.notes ? `<div style="font-size:11px;color:#16a34a;margin-top:2px;">${esc(c.notes)}</div>` : ''}
+                      ${c.failure_reason ? `<div style="font-size:11px;color:#dc2626;margin-top:2px;">${esc(c.failure_reason)}</div>` : ''}
+                    </td>
+                    <td style="font-size:12px;">
+                      <div>ग्राहक: <b>${c.customer_keypad ? (c.customer_keypad === '1' ? '1 (स्वीकार)' : '2 (मना)') : '-'}</b></div>
+                      <div>मिस्त्री: <b>${c.worker_keypad ? (c.worker_keypad === '1' ? '1 (स्वीकार)' : '2 (मना)') : '-'}</b></div>
+                    </td>
+                    <td><b>${c.duration_seconds || 0}s</b></td>
+                    <td style="font-size:12px;color:#64748b;">${when(c.created_at)}</td>
+                    <td style="min-width:210px;">
+                      ${isActive ? `
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                          ${c.status === 'customer_ringing' ? `
+                            <button class="btn-action info" onclick="simulateAiCall(${c.id}, 'customer_answer')" title="ग्राहक फोन उठाएगा">📞 उठाया</button>
+                          ` : ''}
+                          ${c.status === 'customer_answered' || c.status === 'customer_ringing' ? `
+                            <button class="btn-action success" onclick="simulateAiCall(${c.id}, 'customer_press_1')" title="ग्राहक 1 दबाएगा (स्वीकार)">👤 1 दबाएं</button>
+                            <button class="btn-action danger" onclick="simulateAiCall(${c.id}, 'customer_press_2')" title="ग्राहक 2 दबाएगा (मना)">👤 2 दबाएं</button>
+                          ` : ''}
+                          ${c.status === 'worker_ringing' ? `
+                            <button class="btn-action success" onclick="simulateAiCall(${c.id}, 'worker_press_1')" title="मिस्त्री 1 दबाएगा और कॉल ब्रिज होगी">👷 1 दबाएं</button>
+                            <button class="btn-action danger" onclick="simulateAiCall(${c.id}, 'worker_press_2')" title="मिस्त्री 2 दबाएगा">👷 2 दबाएं</button>
+                          ` : ''}
+                          ${c.status === 'connected' ? `
+                            <button class="btn-action danger" onclick="simulateAiCall(${c.id}, 'complete')" title="कॉल समाप्त करें">⏹️ समाप्त करें</button>
+                          ` : ''}
+                        </div>
+                      ` : `
+                        <span style="color:#94a3b8;font-size:12px;">सत्र समाप्त</span>
+                      `}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+
+    <!-- Section 3: Telephony & Firebase Configuration Guide -->
+    <div style="background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:12px;padding:18px;">
+      <h3 style="font-size:15px;font-weight:800;color:#0f172a;margin:0 0 8px;">⚙️ AI Voice Telephony & Firebase Setup Guide</h3>
+      <div style="font-size:13px;color:#475569;line-height:1.6;">
+        <ul style="margin:6px 0 0 18px;padding:0;">
+          <li><b>सिम्युलेटर मोड (वर्तमान में चालू):</b> आप ऊपर दिए गए टेस्ट कंट्रोल्स से ग्राहक के '1' या '2' दबाने, मिस्त्री को रिंग होने और दोनों के कॉल पर जुड़ने का संपूर्ण वॉइस फ्लो तुरंत लाइव टेस्ट कर सकते हैं।</li>
+          <li><b>Vapi AI से लाइव कॉलिंग:</b> Render डैशबोर्ड के Environment Variables में <code>VAPI_API_KEY</code>, <code>VAPI_PHONE_NUMBER_ID</code>, और <code>AI_CALL_PROVIDER=vapi</code> जोड़ते ही भारतीय मोबाइल नंबरों पर वास्तविक AI कॉल शुरू हो जाएगी।</li>
+          <li><b>Exotel / Twilio सपोर्ट:</b> Exotel (भारतीय टेलीकॉम) या Twilio के क्रेडेंशियल्स जोड़कर भी सीधे आउटबाउंड कॉल्स व DTMF ब्रिजिंग संचालित की जा सकती है।</li>
+          <li><b>Firebase Firestore लाइव सिंक:</b> प्रत्येक कॉल का सत्र, समय, कीपैड रिस्पांस एवं अवधि <code>ai_calls</code> कलेक्शन में सीधे स्टोर व लाइव सिंक होती है।</li>
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+async function initiateAiCallForJob(jobId) {
+  const sel = document.getElementById("workerSelect_" + jobId);
+  const workerId = sel ? parseInt(sel.value, 10) : null;
+  if (!workerId) {
+    alert("कृपया पहले काम के लिए एक सुयोग्य मिस्त्री चुनें!");
+    return;
+  }
+
+  try {
+    const res = await api("/admin/ai-calls/initiate", "POST", { job_id: jobId, worker_id: workerId });
+    showToast(`📞 AI कॉल शुरू! ग्राहक (${res.customer?.name || ''}) को कॉल जा रही है...`);
+    fetchAllData();
+  } catch (err) {
+    alert("AI कॉल शुरू करने में त्रुटि: " + err.message);
+  }
+}
+
+async function simulateAiCall(callId, action) {
+  try {
+    const res = await api("/admin/ai-calls/" + callId + "/simulate", "POST", { action });
+    showToast(`⚡ सिम्युलेशन: स्थिति अब '${res.status}' हो गई!`);
+    fetchAllData();
+  } catch (err) {
+    alert("सिम्युलेशन त्रुटि: " + err.message);
+  }
+}
+
+async function createSampleJob() {
+  try {
+    const res = await api("/admin/jobs/sample", "POST", {
+      skill: "plumber",
+      description: "बाथरूम नल लीकेज और पाइप रिपेयरिंग का कार्य",
+      address: "Bhauti, Kanpur Nagar",
+      budget: 500
+    });
+    showToast("✅ " + res.message);
+    fetchAllData();
+  } catch (err) {
+    alert("काम बनाने में त्रुटि: " + err.message);
+  }
+}
+
+function downloadAiCallsCsv() {
+  const calls = globalData.aiCalls || [];
+  if (!calls.length) {
+    alert("डाउनलोड करने के लिए कोई AI कॉल रिकॉर्ड नहीं है!");
+    return;
+  }
+  const data = calls.map(c => ({
+    "Call ID": c.id,
+    "Job ID": c.job_id || "-",
+    "Skill": c.skill || "-",
+    "Customer Name": c.customer_name || "-",
+    "Customer Phone": c.customer_phone || "-",
+    "Worker Name": c.worker_name || "-",
+    "Worker Phone": c.worker_phone || "-",
+    "Provider": c.provider || "-",
+    "Status": c.status || "-",
+    "Customer Keypad": c.customer_keypad || "-",
+    "Worker Keypad": c.worker_keypad || "-",
+    "Duration (Seconds)": c.duration_seconds || 0,
+    "Failure Reason": c.failure_reason || "-",
+    "Created At": when(c.created_at)
+  }));
+  downloadCsv("mistribhaiya_ai_calls_report.csv", data);
+  showToast("📥 AI कॉल्स रिपोर्ट डाउनलोड हो गई!");
 }
 
 // 7. Call Logs

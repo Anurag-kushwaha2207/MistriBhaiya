@@ -145,6 +145,31 @@ CREATE TABLE IF NOT EXISTS call_logs(
   caller_id INTEGER NOT NULL, callee_id INTEGER NOT NULL, booking_id INTEGER,
   provider TEXT, provider_call_id TEXT DEFAULT '', status TEXT DEFAULT '', created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ai_calls(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER REFERENCES jobs(id),
+  customer_id INTEGER NOT NULL REFERENCES users(id),
+  customer_name TEXT DEFAULT '',
+  customer_phone TEXT NOT NULL,
+  worker_id INTEGER NOT NULL REFERENCES users(id),
+  worker_name TEXT DEFAULT '',
+  worker_phone TEXT NOT NULL,
+  skill TEXT DEFAULT '',
+  provider TEXT DEFAULT 'simulator',
+  provider_call_id TEXT DEFAULT '',
+  worker_call_id TEXT DEFAULT '',
+  status TEXT DEFAULT 'initiated',
+  customer_keypad TEXT DEFAULT '',
+  worker_keypad TEXT DEFAULT '',
+  duration_seconds INTEGER DEFAULT 0,
+  failure_reason TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL,
+  completed_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_calls_job ON ai_calls(job_id, worker_id);
+CREATE INDEX IF NOT EXISTS idx_ai_calls_status ON ai_calls(status);
 CREATE TABLE IF NOT EXISTS notifications(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -278,6 +303,32 @@ def migrate(c):
       created_at REAL NOT NULL
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_milestones_proj ON project_milestones(project_id)")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS ai_calls(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER REFERENCES jobs(id),
+      customer_id INTEGER NOT NULL REFERENCES users(id),
+      customer_name TEXT DEFAULT '',
+      customer_phone TEXT NOT NULL,
+      worker_id INTEGER NOT NULL REFERENCES users(id),
+      worker_name TEXT DEFAULT '',
+      worker_phone TEXT NOT NULL,
+      skill TEXT DEFAULT '',
+      provider TEXT DEFAULT 'simulator',
+      provider_call_id TEXT DEFAULT '',
+      worker_call_id TEXT DEFAULT '',
+      status TEXT DEFAULT 'initiated',
+      customer_keypad TEXT DEFAULT '',
+      worker_keypad TEXT DEFAULT '',
+      duration_seconds INTEGER DEFAULT 0,
+      failure_reason TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      created_at REAL NOT NULL,
+      updated_at REAL NOT NULL,
+      completed_at REAL
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ai_calls_job ON ai_calls(job_id, worker_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ai_calls_status ON ai_calls(status)")
 
 def init_db():
     with db() as c:

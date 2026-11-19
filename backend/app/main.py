@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, firebase_sync
+from . import config, firebase_sync, ai_calling
 from .calls import connect_call
 from .db import db, init_db
 from .geo import bbox, haversine_km
@@ -1952,6 +1952,203 @@ def admin_calls(u=Depends(current_user)):
             ORDER BY cl.created_at DESC LIMIT 300
         """).fetchall()
     return {"calls": [dict(r) for r in rows]}
+
+
+# ----------------- ADMIN JOBS & AI CALLING AGENT -----------------
+class AdminInitiateAiCallReq(BaseModel):
+    job_id: int
+    worker_id: int
+
+class AdminSimulateAiCallReq(BaseModel):
+    action: str
+
+class AdminCreateSampleJobReq(BaseModel):
+    skill: str = "plumber"
+    description: str = "नल से पानी टपक रहा है और पाइपलाइन की मरम्मत करानी है।"
+    address: str = "Bhauti, Kanpur Nagar"
+    budget: int = 500
+
+@app.get("/api/admin/jobs")
+def admin_get_jobs(u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        jobs = c.execute("""
+            SELECT j.*, u.name AS customer_name, u.phone AS customer_phone
+            FROM jobs j
+            JOIN users u ON u.id = j.customer_id
+            ORDER BY j.created_at DESC LIMIT 100
+        """).fetchall()
+
+        out = []
+        for job in jobs:
+            j_dict = dict(job)
+            jid = j_dict["id"]
+            j_skill = j_dict["skill"]
+            j_lat = j_dict["lat"]
+            j_lng = j_dict["lng"]
+
+            # Active/Recent AI call for this job
+            active_call = c.execute("""
+                SELECT * FROM ai_calls WHERE job_id = ? ORDER BY id DESC LIMIT 1
+            """, (jid,)).fetchone()
+            j_dict["active_call"] = dict(active_call) if active_call else None
+
+            # Match suitable nearby workers
+            workers = c.execute("""
+                SELECT u.id, u.name, u.phone, wp.skills, wp.daily_rate, wp.village,
+                       wp.lat, wp.lng, wp.radius_km, wp.status, wp.rating_avg, wp.rating_count
+                FROM users u
+                JOIN worker_profiles wp ON wp.user_id = u.id
+                WHERE (',' || wp.skills || ',') LIKE ? AND wp.skills != ''
+                  AND (u.is_blocked IS NULL OR u.is_blocked = 0)
+                  AND (u.is_deleted IS NULL OR u.is_deleted = 0)
+            """, (f"%,{j_skill},%",)).fetchall()
+
+            matched = []
+            for w in workers:
+                w_d = dict(w)
+                dist = None
+                if j_lat is not None and j_lng is not None and w_d["lat"] is not None and w_d["lng"] is not None:
+                    dist = haversine_km(j_lat, j_lng, w_d["lat"], w_d["lng"])
+                w_d["distance_km"] = round(dist, 1) if dist is not None else None
+                matched.append(w_d)
+
+            # Sort: free first, then nearest
+            matched.sort(key=lambda x: (
+                0 if x["status"] == "free" else 1,
+                x["distance_km"] if x["distance_km"] is not None else 9999
+            ))
+            j_dict["matched_workers"] = matched[:5]
+            out.append(j_dict)
+
+    return {"jobs": out, "total": len(out)}
+
+
+@app.post("/api/admin/jobs/sample")
+def admin_create_sample_job(req: AdminCreateSampleJobReq, u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        cust = c.execute("SELECT id, name, phone FROM users WHERE role='customer' AND (is_deleted IS NULL OR is_deleted=0) LIMIT 1").fetchone()
+        if not cust:
+            cust = c.execute("SELECT id, name, phone FROM users LIMIT 1").fetchone()
+        cust_id = cust["id"] if cust else u["id"]
+
+        now = time.time()
+        cur = c.execute("""
+            INSERT INTO jobs (customer_id, skill, description, lat, lng, address, start_date, days, budget, created_at, status)
+            VALUES (?, ?, ?, 26.4499, 80.3319, ?, ?, 1, ?, ?, 'open')
+        """, (cust_id, req.skill, req.description, req.address, today().isoformat(), req.budget, now))
+        jid = cur.lastrowid
+
+    firebase_sync.sync_job(jid)
+    return {"ok": True, "job_id": jid, "message": "नमूना काम (Sample Job) सफलतापूर्वक बनाया गया!"}
+
+
+@app.post("/api/admin/ai-calls/initiate")
+def admin_initiate_ai_call(req: AdminInitiateAiCallReq, u=Depends(current_user)):
+    need_admin(u)
+    res = ai_calling.initiate_ai_call(req.job_id, req.worker_id)
+    return res
+
+
+@app.get("/api/admin/ai-calls")
+def admin_get_ai_calls(u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        rows = c.execute("""
+            SELECT ac.*, j.skill AS job_skill, j.address AS job_address
+            FROM ai_calls ac
+            LEFT JOIN jobs j ON j.id = ac.job_id
+            ORDER BY ac.created_at DESC LIMIT 150
+        """).fetchall()
+    return {"calls": [dict(r) for r in rows], "provider": config.AI_CALL_PROVIDER}
+
+
+@app.get("/api/admin/ai-calls/{call_id}")
+def admin_get_ai_call_detail(call_id: int, u=Depends(current_user)):
+    need_admin(u)
+    with db() as c:
+        row = c.execute("SELECT * FROM ai_calls WHERE id = ?", (call_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Call not found")
+    return {"call": dict(row)}
+
+
+@app.post("/api/admin/ai-calls/{call_id}/simulate")
+def admin_simulate_ai_call(call_id: int, req: AdminSimulateAiCallReq, u=Depends(current_user)):
+    need_admin(u)
+    res = ai_calling.simulate_step(call_id, req.action)
+    return res
+
+
+# ----------------- AI CALLING WEBHOOKS -----------------
+@app.post("/api/webhooks/ai-calling/vapi")
+async def webhook_vapi(request: Request, call_id: int = Query(...), leg: str = Query("customer")):
+    try:
+        body = await request.json()
+        logger.info("Vapi webhook event for call #%s (%s): %s", call_id, leg, body.get("message", {}).get("type"))
+        msg = body.get("message", {})
+        m_type = msg.get("type")
+
+        if m_type == "status-update":
+            status = msg.get("status")
+            if status == "in-progress":
+                with db() as c:
+                    st = "customer_answered" if leg == "customer" else "worker_ringing"
+                    c.execute("UPDATE ai_calls SET status=?, updated_at=? WHERE id=?", (st, time.time(), call_id))
+                firebase_sync.sync_ai_call(call_id)
+            elif status == "ended":
+                duration = int(msg.get("durationSeconds") or 0)
+                ai_calling.complete_call(call_id, "completed", f"Vapi call ended ({duration}s)")
+
+        elif m_type == "function-call" or "dtmf" in str(msg).lower():
+            args = msg.get("functionCall", {}).get("parameters", {})
+            digit = str(args.get("digit") or args.get("choice") or "")
+            if leg == "customer" and digit:
+                ai_calling.handle_customer_dtmf(call_id, digit)
+            elif leg == "worker" and digit:
+                ai_calling.handle_worker_dtmf(call_id, digit)
+
+        return {"ok": True}
+    except Exception as e:
+        logger.error("Vapi webhook error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/webhooks/ai-calling/twilio")
+async def webhook_twilio(request: Request, call_id: int = Query(...), leg: str = Query("customer")):
+    try:
+        form = await request.form()
+        digits = form.get("Digits", "").strip()
+        call_status = form.get("CallStatus", "")
+        logger.info("Twilio webhook for call #%s (%s): Digits=%s Status=%s", call_id, leg, digits, call_status)
+        from fastapi.responses import Response
+
+        if leg == "customer":
+            if digits:
+                res = ai_calling.handle_customer_dtmf(call_id, digits)
+                if digits == "1":
+                    twiml = "<Response><Say language='hi-IN'>Dhanyavaad! Hum Ramesh ji ko call laga rahe hain, kripya line par bane rahein.</Say></Response>"
+                else:
+                    twiml = "<Response><Say language='hi-IN'>Koi baat nahi. Mistri App ka upyog karne ke liye dhanyavaad.</Say><Hangup/></Response>"
+            else:
+                twiml = "<Response><Say language='hi-IN'>Koi uttar nahi mila. Dhanyavaad.</Say><Hangup/></Response>"
+            return Response(content=twiml, media_type="application/xml")
+
+        elif leg == "worker":
+            if digits == "1":
+                ai_calling.handle_worker_dtmf(call_id, "1")
+                twiml = "<Response><Say language='hi-IN'>Aapki baat customer se karayi jaa rahi hai.</Say></Response>"
+            else:
+                ai_calling.handle_worker_dtmf(call_id, "2")
+                twiml = "<Response><Say language='hi-IN'>Dhanyavaad.</Say><Hangup/></Response>"
+            return Response(content=twiml, media_type="application/xml")
+
+        return {"ok": True}
+    except Exception as e:
+        logger.error("Twilio webhook error: %s", e)
+        return {"ok": False, "error": str(e)}
+
 
 @app.get("/api/admin/safety")
 def admin_safety(u=Depends(current_user)):
