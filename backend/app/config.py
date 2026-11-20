@@ -1,5 +1,14 @@
 """All settings come from environment variables (see .env.example)."""
 import os
+try:
+    from dotenv import load_dotenv
+    _cand_env = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(_cand_env):
+        load_dotenv(_cand_env)
+    else:
+        load_dotenv()
+except Exception:
+    pass
 
 def _b(name, default="0"):
     return os.getenv(name, default).lower() in ("1", "true", "yes")
