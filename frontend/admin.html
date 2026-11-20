@@ -1680,9 +1680,12 @@ function renderAiCalling() {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #f1f5f9;padding-bottom:10px;">
         <div>
           <h2 style="font-size:16.5px;font-weight:800;color:#0f172a;margin:0;">1. ग्राहकों के पोस्टेड काम व सुयोग्य मिस्त्री (Jobs & Matched Workers)</h2>
-          <div style="font-size:12.5px;color:#64748b;margin-top:2px;">सुयोग्य मिस्त्री चुनें और 'Call Customer with AI' बटन दबाकर ग्राहक को स्वचालित कॉल लगाएं।</div>
+          <div style="font-size:12.5px;color:#64748b;margin-top:2px;">⚡ <b>ऑटोमेशन सक्रिय:</b> घर मालिक के काम पोस्ट करते ही सिस्टम स्वतः सबसे नजदीकी फ्री मिस्त्री को ढूँढकर कॉल लगा देता है।</div>
         </div>
-        <span class="badge info">${jobs.length} Jobs Posted</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="badge success" style="font-size:11.5px;">⚡ Auto-Call: ON</span>
+          <span class="badge info">${jobs.length} Jobs Posted</span>
+        </div>
       </div>
 
       ${jobs.length === 0 ? `
@@ -1757,12 +1760,17 @@ function renderAiCalling() {
                         </div>
                       ` : `
                         <div style="display:flex;flex-direction:column;gap:6px;">
-                          <button class="btn-action primary" style="background:#16a34a;white-space:nowrap;padding:7px 12px;font-size:12px;font-weight:700;" onclick="initiateAiCallForJob(${j.id}, 'customer_first')">
-                            📞 ग्राहक को पहले कॉल करें
+                          <button class="btn-action primary" style="background:#7c3aed;color:#fff;white-space:nowrap;padding:7px 12px;font-size:12px;font-weight:700;box-shadow:0 2px 4px rgba(124,58,237,0.25);" onclick="autoCallNearestWorker(${j.id})">
+                            ⚡ सबसे पास वाले फ्री मिस्त्री को ऑटो-कॉल
                           </button>
-                          <button class="btn-action primary" style="background:#0f766e;white-space:nowrap;padding:7px 12px;font-size:12px;font-weight:700;" onclick="initiateAiCallForJob(${j.id}, 'worker_first')">
-                            👷 मिस्त्री को पहले कॉल करें
-                          </button>
+                          <div style="display:flex;gap:4px;">
+                            <button class="btn-action primary" style="background:#16a34a;white-space:nowrap;padding:6px 10px;font-size:11px;font-weight:700;flex:1;" onclick="initiateAiCallForJob(${j.id}, 'customer_first')">
+                              📞 ग्राहक पहले
+                            </button>
+                            <button class="btn-action primary" style="background:#0f766e;white-space:nowrap;padding:6px 10px;font-size:11px;font-weight:700;flex:1;" onclick="initiateAiCallForJob(${j.id}, 'worker_first')">
+                              👷 मिस्त्री पहले
+                            </button>
+                          </div>
                         </div>
                       `}
                     </td>
@@ -1910,6 +1918,18 @@ async function initiateAiCallForJob(jobId, direction = 'customer_first') {
     fetchAllData();
   } catch (err) {
     alert("AI कॉल शुरू करने में त्रुटि: " + err.message);
+  }
+}
+
+async function autoCallNearestWorker(jobId) {
+  try {
+    showToast("🔍 सबसे नजदीकी फ्री मिस्त्री को ढूँढ रहे हैं...");
+    const res = await api(`/admin/jobs/${jobId}/auto-call`, "POST", {});
+    const w = res.nearest_worker || {};
+    showToast(`⚡ ऑटो-कॉल शुरू! सबसे नजदीकी फ्री मिस्त्री ${w.name || 'मिस्त्री'} (${res.distance_str || ''}) को कॉल मिला दी गई है!`);
+    fetchAllData();
+  } catch (err) {
+    alert("ऑटो-कॉल त्रुटि: " + err.message);
   }
 }
 

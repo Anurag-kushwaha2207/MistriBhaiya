@@ -752,7 +752,15 @@ async def create_job(req: JobReq, u=Depends(current_user)):
                 "distance_km": round(d, 1)
             })
 
-    return {"id": jid, "job": dict(job_row) if job_row else {"id": jid}}
+    # Auto-dispatch AI call to nearest free worker if automation enabled
+    auto_call_res = None
+    if getattr(config, "AUTO_AI_CALL_ENABLED", True):
+        try:
+            auto_call_res = ai_calling.auto_dispatch_ai_call_for_job(jid, direction="worker_first")
+        except Exception as e:
+            logger.warning("Auto AI call dispatch error on job create: %s", e)
+
+    return {"id": jid, "job": dict(job_row) if job_row else {"id": jid}, "auto_call": auto_call_res}
 
 @app.get("/api/jobs/mine")
 def my_jobs(u=Depends(current_user)):
@@ -2096,6 +2104,15 @@ def admin_create_sample_job(req: AdminCreateSampleJobReq, u=Depends(current_user
 def admin_initiate_ai_call(req: AdminInitiateAiCallReq, u=Depends(current_user)):
     need_admin(u)
     res = ai_calling.initiate_ai_call(req.job_id, req.worker_id, direction=req.direction)
+    return res
+
+
+@app.post("/api/admin/jobs/{job_id}/auto-call")
+def admin_auto_call_job(job_id: int, u=Depends(current_user)):
+    need_admin(u)
+    res = ai_calling.auto_dispatch_ai_call_for_job(job_id, direction="worker_first")
+    if not res:
+        raise HTTPException(400, "इस काम के लिए कोई फ्री मिस्त्री नहीं मिला (या पहले से कॉल जारी है)।")
     return res
 
 

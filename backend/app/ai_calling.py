@@ -16,8 +16,23 @@ from fastapi import HTTPException
 
 from . import config, firebase_sync
 from .db import db
+from .geo import haversine_km
 
 logger = logging.getLogger("ai_calling")
+
+SKILL_SYNONYMS = {
+    "mason": {"mason", "rajmistri", "चिनाई", "राजमिस्त्री", "mistri"},
+    "rajmistri": {"mason", "rajmistri", "चिनाई", "राजमिस्त्री", "mistri"},
+    "labour": {"labour", "helper", "मजदूर", "लेबर", "मजदूर / हेल्पर"},
+    "helper": {"labour", "helper", "मजदूर", "लेबर", "मजदूर / हेल्पर"},
+    "electrician": {"electrician", "बिजली", "वायरिंग"},
+    "plumber": {"plumber", "नल", "पाइप", "प्लम्बर"},
+    "painter": {"painter", "रंगाई", "पुताई", "पेंटर"},
+    "tiles": {"tiles", "मार्बल", "टाइल्स"},
+    "pop": {"pop", "ceiling", "सीलिंग", "पीओपी"},
+    "welder": {"welder", "वेल्डर", "लोहा"},
+    "carpenter": {"carpenter", "बढ़ई", "लकड़ी"},
+}
 
 SKILL_NAMES_HI = {
     "mason": "राजमिस्त्री (चिनाई)",
@@ -215,6 +230,109 @@ def initiate_ai_call(job_id: int, worker_id: int, direction: str = "customer_fir
         "speech_prompt": get_customer_prompt(worker["name"] or "Mistri", skill_hi, direction=direction),
         "created_at": now,
     }
+
+
+def auto_dispatch_ai_call_for_job(job_id: int, direction: str = "worker_first") -> Optional[Dict[str, Any]]:
+    """Automatically finds the nearest FREE worker matching the job skill and initiates an AI call."""
+    with db() as c:
+        job = c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if not job or job["status"] not in ("open", "in_progress"):
+            return None
+
+        # Check if an active call already exists
+        active = c.execute("""
+            SELECT id, status FROM ai_calls
+            WHERE job_id = ? AND status IN (
+                'initiated', 'customer_ringing', 'customer_answered',
+                'customer_accepted', 'worker_ringing', 'worker_accepted',
+                'connecting', 'connected'
+            ) ORDER BY id DESC LIMIT 1
+        """, (job_id,)).fetchone()
+        if active:
+            logger.info("Auto AI call skipped: Call #%s already active (%s) for Job #%s", active["id"], active["status"], job_id)
+            return None
+
+        skill = (job["skill"] or "").strip().lower()
+        j_lat = job["lat"]
+        j_lng = job["lng"]
+        syns = SKILL_SYNONYMS.get(skill, {skill})
+
+        # Fetch workers
+        rows = c.execute("""
+            SELECT u.id, u.name, u.phone, u.role,
+                   wp.skills, wp.status, wp.daily_rate, wp.village,
+                   wp.lat, wp.lng, wp.radius_km
+            FROM users u
+            JOIN worker_profiles wp ON wp.user_id = u.id
+            WHERE u.role = 'worker' AND (u.is_deleted IS NULL OR u.is_deleted = 0)
+        """).fetchall()
+
+        matched_free = []
+        for r in rows:
+            w = dict(r)
+            # Worker must be free!
+            if (w.get("status") or "free") != "free":
+                continue
+
+            # Must match skill
+            w_skills = set(s.strip().lower() for s in (w.get("skills") or "").split(",") if s.strip())
+            if not syns.intersection(w_skills):
+                continue
+
+            dist = None
+            if j_lat is not None and j_lng is not None and w.get("lat") is not None and w.get("lng") is not None:
+                dist = haversine_km(j_lat, j_lng, w["lat"], w["lng"])
+
+            w["distance_km"] = round(dist, 2) if dist is not None else None
+            matched_free.append(w)
+
+        # Fallback: if no worker with exact skill is free, try any free worker
+        if not matched_free:
+            all_free = []
+            for r in rows:
+                w = dict(r)
+                if (w.get("status") or "free") == "free":
+                    dist = None
+                    if j_lat is not None and j_lng is not None and w.get("lat") is not None and w.get("lng") is not None:
+                        dist = haversine_km(j_lat, j_lng, w["lat"], w["lng"])
+                    w["distance_km"] = round(dist, 2) if dist is not None else None
+                    all_free.append(w)
+            if all_free:
+                all_free.sort(key=lambda x: x["distance_km"] if x.get("distance_km") is not None else 9999)
+                matched_free = [all_free[0]]
+
+        if not matched_free:
+            logger.info("Auto AI call: No free worker available for Job #%s", job_id)
+            return None
+
+        # Sort: nearest first
+        matched_free.sort(key=lambda x: x["distance_km"] if x.get("distance_km") is not None else 9999)
+        nearest = matched_free[0]
+        dist_str = f"{nearest['distance_km']} km" if nearest.get('distance_km') is not None else "नजदीक"
+
+        logger.info(
+            "Auto-dispatching AI call for Job #%s to nearest free worker #%s (%s, %s)",
+            job_id, nearest["id"], nearest["name"], dist_str
+        )
+
+    # Initiate call
+    try:
+        res = initiate_ai_call(job_id=job_id, worker_id=nearest["id"], direction=direction)
+        res["auto_dispatched"] = True
+        res["nearest_worker"] = nearest
+        res["distance_str"] = dist_str
+
+        # Update note in ai_calls record
+        with db() as c:
+            c.execute(
+                "UPDATE ai_calls SET notes = ? WHERE id = ?",
+                (f"⚡ ऑटो-कॉल: सबसे नजदीकी फ्री मिस्त्री {nearest['name']} ({dist_str}) को कॉल मिलाई गई", res["call_id"]),
+            )
+        firebase_sync.sync_ai_call(res["call_id"])
+        return res
+    except Exception as e:
+        logger.error("Auto AI dispatch error for Job #%s: %s", job_id, e)
+        return None
 
 
 def _dispatch_customer_call(

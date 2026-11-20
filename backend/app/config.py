@@ -16,11 +16,14 @@ def _b(name, default="0"):
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 
 _raw_db = os.getenv("DB_PATH", "kaamsetu.db")
-if not os.path.isabs(_raw_db):
+_backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if os.name == "nt" and _raw_db.startswith("/data/"):
+    _cand = os.path.join(_backend_dir, os.path.basename(_raw_db))
+    DB_PATH = _cand if os.path.exists(_cand) else os.path.join(_backend_dir, "kaamsetu.db")
+elif not os.path.isabs(_raw_db):
     if os.path.exists(_raw_db):
         DB_PATH = os.path.abspath(_raw_db)
     else:
-        _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         _cand = os.path.join(_backend_dir, _raw_db)
         if os.path.exists(_cand):
             DB_PATH = _cand
@@ -52,6 +55,7 @@ EXOTEL_EXOPHONE = os.getenv("EXOTEL_EXOPHONE", "")       # your virtual number (
 
 # AI Voice Calling Agent (Sarvam AI / Vapi / Exotel / Twilio / Simulator)
 AI_CALL_PROVIDER = os.getenv("AI_CALL_PROVIDER", "simulator") # simulator | sarvam | vapi | exotel | twilio
+AUTO_AI_CALL_ENABLED = _b("AUTO_AI_CALL_ENABLED", "1")        # 1 = auto call nearest free worker when job published
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 SARVAM_ORG_ID = os.getenv("SARVAM_ORG_ID", "")
 SARVAM_WORKSPACE_ID = os.getenv("SARVAM_WORKSPACE_ID", "")
