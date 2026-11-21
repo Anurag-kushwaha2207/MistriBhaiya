@@ -1,14 +1,17 @@
 """All settings come from environment variables (see .env.example)."""
-import os
-try:
-    from dotenv import load_dotenv
-    _cand_env = os.path.join(os.path.dirname(__file__), "..", ".env")
-    if os.path.exists(_cand_env):
-        load_dotenv(_cand_env)
-    else:
-        load_dotenv()
-except Exception:
-    pass
+import os, sys
+
+_is_testing = "pytest" in sys.modules or os.getenv("TESTING") == "1"
+if not _is_testing:
+    try:
+        from dotenv import load_dotenv
+        _cand_env = os.path.join(os.path.dirname(__file__), "..", ".env")
+        if os.path.exists(_cand_env):
+            load_dotenv(_cand_env)
+        else:
+            load_dotenv()
+    except Exception:
+        pass
 
 def _b(name, default="0"):
     return os.getenv(name, default).lower() in ("1", "true", "yes")
@@ -17,7 +20,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 
 _raw_db = os.getenv("DB_PATH", "kaamsetu.db")
 _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if os.name == "nt" and _raw_db.startswith("/data/"):
+if _is_testing:
+    DB_PATH = os.path.abspath(_raw_db) if not os.path.isabs(_raw_db) else _raw_db
+elif os.name == "nt" and _raw_db.startswith("/data/"):
     _cand = os.path.join(_backend_dir, os.path.basename(_raw_db))
     DB_PATH = _cand if os.path.exists(_cand) else os.path.join(_backend_dir, "kaamsetu.db")
 elif not os.path.isabs(_raw_db):

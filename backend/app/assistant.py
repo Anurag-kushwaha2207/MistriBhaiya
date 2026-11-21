@@ -869,6 +869,8 @@ async def handle(u, role, lang, st, req, changed_lang):
     return T(lang, "unknown"), menu(), actions
 
 def worker_incomplete(u):
+    if not (u.get("name") or "").strip():
+        return True
     with db() as c:
         wp = c.execute("SELECT skills,lat FROM worker_profiles WHERE user_id=?", (u["id"],)).fetchone()
     return not wp or not wp["skills"] or wp["lat"] is None

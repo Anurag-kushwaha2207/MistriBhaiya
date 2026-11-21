@@ -1,6 +1,6 @@
 import asyncio, hashlib, hmac, json, os, sys, tempfile, time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
+os.environ["TESTING"] = "1"
 if "DB_PATH" not in os.environ:
     os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "t_pay.db")
 os.environ["DEV_MODE"] = "1"
@@ -152,6 +152,7 @@ def test_payment_webhook_flow():
     client.put("/api/worker/profile", headers=w_hdr, json={
         "skills": ["painter"], "daily_rate": 700, "experience_years": 3, "village": "Noida", "lat": LAT, "lng": LNG, "radius_km": 10
     })
+    client.post("/api/worker/status", headers=w_hdr, json={"status": "free"})
     c_hdr, c_id = get_auth("9811000006", "customer", "Pooja Customer")
 
     r_book = client.post("/api/bookings", headers=c_hdr, json={

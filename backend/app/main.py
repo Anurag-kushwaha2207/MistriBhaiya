@@ -102,7 +102,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 init_db()   # idempotent: creates tables if missing
-threading.Thread(target=firebase_sync.restore_all_from_firestore, daemon=True).start()
+if not firebase_sync.is_testing():
+    threading.Thread(target=firebase_sync.restore_all_from_firestore, daemon=True).start()
 
 # ---------------------------------------------------------------- models
 class OtpReq(BaseModel):
@@ -641,7 +642,7 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
         if d is not None and (d > r or (respect_worker_radius and d > w["radius_km"])):
             continue
         st = effective_status(w, ranges[w["id"]], d0, now)
-        if st != "free":
+        if free_only and st != "free":
             continue
         pub = worker_public(w, w, st, d)
         raw_phone = w["phone"] if "phone" in w.keys() else ""
@@ -652,7 +653,7 @@ def search_workers(lat: Optional[float] = None, lng: Optional[float] = None, rad
     if not out and rows and expand:
         for w in rows:
             st = effective_status(w, ranges[w["id"]], d0, now)
-            if st != "free":
+            if free_only and st != "free":
                 continue
             d = haversine_km(w_lat, w_lng, w["lat"], w["lng"]) if (w["lat"] is not None and w["lng"] is not None) else None
             pub = worker_public(w, w, st, d)
@@ -932,8 +933,8 @@ def my_bookings(u=Depends(current_user)):
         paid = b["id"] in paid_booking_ids
         b["advance_paid"] = 1 if paid else 0
 
-        # Start OTP is strictly hidden until the customer pays the ₹10 fee
-        if u["role"] == "worker" or b["status"] != "accepted" or b.get("started_at") or not paid:
+        # Start OTP is strictly hidden until the customer pays the ₹10 fee (or in DEV_MODE)
+        if u["role"] == "worker" or b["status"] != "accepted" or b.get("started_at") or (not config.DEV_MODE and not paid):
             b["start_otp"] = ""
         out.append(b)
     return {"bookings": out}
@@ -1449,6 +1450,7 @@ def admin_workers(u=Depends(current_user)):
     return {"workers": [{**dict(r), "free_now": r["status"] == "free" and (r["free_until"] or 0) > now} for r in rows]}
 
 @app.post("/api/admin/workers/{wid}/toggle-verify")
+@app.post("/api/admin/workers/{wid}/verify")
 def admin_toggle_verify_worker(wid: int, u=Depends(current_user)):
     need_admin(u)
     with db() as c:

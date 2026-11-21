@@ -16,10 +16,17 @@ from typing import Any, Dict, Optional
 from . import config
 from .db import db
 
+import os
+import sys
+
 logger = logging.getLogger("firebase_sync")
 
 FIREBASE_PROJECT_ID = "mistribhaiya-f5a94"
 FIRESTORE_BASE_URL = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents"
+
+
+def is_testing() -> bool:
+    return "pytest" in sys.modules or os.getenv("TESTING") == "1"
 
 
 def to_fs(val: Any) -> Dict[str, Any]:
@@ -92,6 +99,8 @@ def get_fs_doc(collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
 
 def save_credential(phone: str, user_id: int, password_hash: str, name: str, role: str, avatar: str = ""):
     """Store user credential in Firestore so it persists across container restarts."""
+    if is_testing():
+        return
     data = {
         "phone": phone,
         "user_id": user_id,
@@ -106,6 +115,8 @@ def save_credential(phone: str, user_id: int, password_hash: str, name: str, rol
 
 def restore_user_if_missing(phone: str) -> Optional[dict]:
     """If user is not in local SQLite, checks Firestore auth_credentials and restores user + profile."""
+    if is_testing():
+        return None
     try:
         cred = get_fs_doc("auth_credentials", phone)
         if not cred or not cred.get("user_id"):
@@ -231,6 +242,8 @@ def fetch_all_docs(collection_name: str) -> list:
 
 def restore_all_from_firestore():
     """Background startup task: load all users, profiles, and bookings from Firestore into SQLite."""
+    if is_testing():
+        return
     try:
         fs_users = fetch_all_docs("users")
         fs_workers = fetch_all_docs("worker_profiles")
@@ -450,11 +463,15 @@ def _write_doc_sync(collection: str, doc_id: str, data: Dict[str, Any]):
 
 def push_to_firebase(collection: str, doc_id: str, data: Dict[str, Any]):
     """Push document to Firestore in a background thread so the main API response is not delayed."""
+    if is_testing():
+        return
     threading.Thread(target=_write_doc_sync, args=(collection, str(doc_id), data), daemon=True).start()
 
 
 def delete_fs_doc(collection: str, doc_id: str):
     """Delete a document from Firestore."""
+    if is_testing():
+        return
     def _del():
         try:
             url = f"{FIRESTORE_BASE_URL}/{collection}/{doc_id}"
