@@ -771,10 +771,26 @@ def _call_vapi_customer(call_id: int, phone: str, prompt: str, worker_name: str,
     }
     webhook_url = f"{config.BACKEND_BASE_URL}/api/webhooks/ai-calling/vapi?call_id={call_id}&leg=customer"
 
-    payload = {
-        "phoneNumberId": config.VAPI_PHONE_NUMBER_ID or None,
+    payload: Dict[str, Any] = {
         "customer": {"number": "+91" + phone[-10:]},
-        "assistant": {
+    }
+    if config.VAPI_PHONE_NUMBER_ID:
+        payload["phoneNumberId"] = config.VAPI_PHONE_NUMBER_ID
+
+    asst_id = config.VAPI_CUSTOMER_ASSISTANT_ID or config.VAPI_ASSISTANT_ID
+    if asst_id:
+        payload["assistantId"] = asst_id
+        payload["assistantOverrides"] = {
+            "firstMessage": prompt,
+            "variableValues": {
+                "worker_name": worker_name,
+                "skill": skill_hi,
+                "call_id": str(call_id),
+            },
+            "serverUrl": webhook_url,
+        }
+    else:
+        payload["assistant"] = {
             "firstMessage": prompt,
             "model": {
                 "provider": "openai",
@@ -792,8 +808,7 @@ def _call_vapi_customer(call_id: int, phone: str, prompt: str, worker_name: str,
                 ],
             },
             "serverUrl": webhook_url,
-        },
-    }
+        }
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers)
     with urllib.request.urlopen(req, timeout=12) as resp:
         res = json.loads(resp.read().decode())
@@ -808,10 +823,25 @@ def _call_vapi_worker(call_id: int, phone: str, prompt: str, skill_hi: str) -> D
     }
     webhook_url = f"{config.BACKEND_BASE_URL}/api/webhooks/ai-calling/vapi?call_id={call_id}&leg=worker"
 
-    payload = {
-        "phoneNumberId": config.VAPI_PHONE_NUMBER_ID or None,
+    payload: Dict[str, Any] = {
         "customer": {"number": "+91" + phone[-10:]},
-        "assistant": {
+    }
+    if config.VAPI_PHONE_NUMBER_ID:
+        payload["phoneNumberId"] = config.VAPI_PHONE_NUMBER_ID
+
+    asst_id = config.VAPI_WORKER_ASSISTANT_ID or config.VAPI_ASSISTANT_ID
+    if asst_id:
+        payload["assistantId"] = asst_id
+        payload["assistantOverrides"] = {
+            "firstMessage": prompt,
+            "variableValues": {
+                "skill": skill_hi,
+                "call_id": str(call_id),
+            },
+            "serverUrl": webhook_url,
+        }
+    else:
+        payload["assistant"] = {
             "firstMessage": prompt,
             "model": {
                 "provider": "openai",
@@ -828,8 +858,7 @@ def _call_vapi_worker(call_id: int, phone: str, prompt: str, skill_hi: str) -> D
                 ],
             },
             "serverUrl": webhook_url,
-        },
-    }
+        }
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers)
     with urllib.request.urlopen(req, timeout=12) as resp:
         res = json.loads(resp.read().decode())
