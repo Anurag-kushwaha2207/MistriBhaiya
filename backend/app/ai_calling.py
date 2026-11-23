@@ -768,6 +768,7 @@ def _call_vapi_customer(call_id: int, phone: str, prompt: str, worker_name: str,
     headers = {
         "Authorization": f"Bearer {config.VAPI_API_KEY}",
         "Content-Type": "application/json",
+        "User-Agent": "MistriBhaiya-App/1.0",
     }
     webhook_url = f"{config.BACKEND_BASE_URL}/api/webhooks/ai-calling/vapi?call_id={call_id}&leg=customer"
 
@@ -820,6 +821,7 @@ def _call_vapi_worker(call_id: int, phone: str, prompt: str, skill_hi: str) -> D
     headers = {
         "Authorization": f"Bearer {config.VAPI_API_KEY}",
         "Content-Type": "application/json",
+        "User-Agent": "MistriBhaiya-App/1.0",
     }
     webhook_url = f"{config.BACKEND_BASE_URL}/api/webhooks/ai-calling/vapi?call_id={call_id}&leg=worker"
 
